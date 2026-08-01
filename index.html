@@ -651,31 +651,44 @@ function AcademicTracker() {
     const json = JSON.parse(match[1]);
     if (json.status !== "ok") return null;
     const cols = json.table.cols;
-    return json.table.rows.map(r => {
+    let rows = json.table.rows;
+
+    // If headers weren't auto-detected (labels are empty), use first row as headers
+    const hasLabels = cols.some(c => c.label && c.label.length > 0);
+    let headers;
+    if (hasLabels) {
+      headers = cols.map(c => c.label);
+    } else {
+      // First row contains the header names
+      if (rows.length === 0) return [];
+      headers = rows[0].c.map(cell => (cell && cell.v != null) ? String(cell.v) : "");
+      rows = rows.slice(1); // skip header row
+    }
+
+    return rows.map(r => {
       const obj = {};
-      cols.forEach((col, i) => {
+      headers.forEach((hdr, i) => {
+        const col = cols[i] || {};
         const cell = r.c && r.c[i];
-        if (!cell || cell.v == null) { obj[col.label] = ""; return; }
+        if (!cell || cell.v == null) { obj[hdr] = ""; return; }
         const v = cell.v;
         const f = cell.f;
         if (col.type === "date") {
-          // Date(year,month,day) - month is 0-indexed in gviz
-          if (f) { obj[col.label] = f; }
+          if (f) { obj[hdr] = f; }
           else if (typeof v === "string") {
             const m = v.match(/Date\((\d+),(\d+),(\d+)/);
-            if (m) obj[col.label] = m[1] + "-" + String(Number(m[2]) + 1).padStart(2, "0") + "-" + m[3].padStart(2, "0");
-            else obj[col.label] = "";
-          } else { obj[col.label] = ""; }
+            if (m) obj[hdr] = m[1] + "-" + String(Number(m[2]) + 1).padStart(2, "0") + "-" + m[3].padStart(2, "0");
+            else obj[hdr] = "";
+          } else { obj[hdr] = ""; }
         } else if (col.type === "datetime" || col.type === "timeofday") {
-          // deadlineTime: Date(1899,11,30,17,0,0) → "17:00"
-          if (f) { obj[col.label] = f; }
+          if (f) { obj[hdr] = f; }
           else if (typeof v === "string") {
             const m = v.match(/Date\(\d+,\d+,\d+,(\d+),(\d+)/);
-            if (m) obj[col.label] = m[1].padStart(2, "0") + ":" + m[2].padStart(2, "0");
-            else obj[col.label] = "";
-          } else { obj[col.label] = ""; }
+            if (m) obj[hdr] = m[1].padStart(2, "0") + ":" + m[2].padStart(2, "0");
+            else obj[hdr] = "";
+          } else { obj[hdr] = ""; }
         } else {
-          obj[col.label] = v != null ? String(v) : "";
+          obj[hdr] = v != null ? String(v) : "";
         }
       });
       return obj;
