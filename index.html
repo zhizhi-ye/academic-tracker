@@ -685,32 +685,37 @@ function AcademicTracker() {
   const pullFromSheet = async () => {
     setSyncing(true); setSyncMsg("Pulling...");
     try {
-      let data;
-      if (window.electronAPI?.pullFromSheet) {
-        data = await window.electronAPI.pullFromSheet();
-      } else {
-        // Fetch all 4 sheets via gviz
-        const [tasksResp, tripsResp, habitsResp, logResp] = await Promise.all([
-          fetch(gvizUrl("Tasks")).then(r => r.text()),
-          fetch(gvizUrl("Trips")).then(r => r.text()).catch(() => ""),
-          fetch(gvizUrl("Habits")).then(r => r.text()).catch(() => ""),
-          fetch(gvizUrl("Habit Log")).then(r => r.text()).catch(() => ""),
-        ]);
-        const tasks = parseGviz(tasksResp) || [];
-        const trips = parseGviz(tripsResp) || [];
-        const habits = parseGviz(habitsResp) || [];
-        const logRows = parseGviz(logResp) || [];
-        const habitLog = {};
-        logRows.forEach(r => { if (r.key) habitLog[r.key] = true; });
-        data = { tasks, trips, habits, habitLog };
-      }
-      if (data && data.tasks && data.tasks.length > 0) {
-        await saveTasks(data.tasks);
-        if (data.trips) await saveTrips(data.trips);
-        if (data.habits) await saveHabits(data.habits);
-        if (data.habitLog) await saveHabitLog(data.habitLog);
-        setSyncMsg("Pulled " + data.tasks.length + " tasks ✓");
-      } else { setSyncMsg("Pull: no data"); }
+      const fetchText = async (url) => {
+        if (window.electronAPI?.fetchUrl) {
+          return await window.electronAPI.fetchUrl(url);
+        }
+        const resp = await fetch(url);
+        return await resp.text();
+      };
+      const [tasksResp, tripsResp, habitsResp, logResp] = await Promise.all([
+        fetchText(gvizUrl("Tasks")),
+        fetchText(gvizUrl("Trips")).catch(() => ""),
+        fetchText(gvizUrl("Habits")).catch(() => ""),
+        fetchText(gvizUrl("Habit Log")).catch(() => ""),
+      ]);
+      const tasks = parseGviz(tasksResp) || [];
+      const trips = parseGviz(tripsResp) || [];
+      const habits = parseGviz(habitsResp) || [];
+      const logRows = parseGviz(logResp) || [];
+      const habitLog = {};
+      logRows.forEach(r => { if (r.key && !r.key.startsWith("undefined")) habitLog[r.key] = true; });
+
+      // Validate: tasks must have id and title, habits must have id and name
+      const validTasks = tasks.filter(t => t.id && t.title);
+      const validHabits = habits.filter(h => h.id && h.name);
+
+      if (validTasks.length > 0) {
+        await saveTasks(validTasks);
+        if (trips.length > 0) await saveTrips(trips.filter(t => t.id && t.title));
+        if (validHabits.length > 0) await saveHabits(validHabits);
+        if (Object.keys(habitLog).length > 0) await saveHabitLog(habitLog);
+        setSyncMsg("Pulled " + validTasks.length + " tasks ✓");
+      } else { setSyncMsg("Pull: no valid data"); }
     } catch (e) { setSyncMsg("Pull: " + e.message); }
     setSyncing(false);
     setTimeout(() => setSyncMsg(""), 6000);
