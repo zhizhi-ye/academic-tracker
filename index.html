@@ -15,13 +15,7 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html { height: 100%; -webkit-text-size-adjust: 100%; }
-  body {
-    margin: 0; padding: 0; height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+  body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
   @media (prefers-color-scheme: dark) { html, body { background: #12121f; color: #e8e8f0; } }
   @media (prefers-color-scheme: light) { html, body { background: #f9fafb; color: #1a1a2e; } }
   button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
@@ -629,13 +623,14 @@ function AcademicTracker() {
   const undoTimeoutRef = useRef(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  const [showMobileCal, setShowMobileCal] = useState(false);
 
   const syncToSheet = async () => {
     // PWA: use fetch directly
     setSyncing(true); setSyncMsg("");
     try {
-      const resp = await fetch("https://script.google.com/macros/s/AKfycbyjEdD-TcScTqjjuiY95jyTq9A1Y5lVxxaNVNORLXgRLfc-CGdcnnjEyDnXsftRh13M/exec", { method: "POST", body: JSON.stringify({ tasks }), headers: { "Content-Type": "text/plain" }, mode: "no-cors" }); const result = { success: true, count: tasks.length };
-      if (result && result.success) { setSyncMsg("Synced " + (result.count || tasks.length) + " tasks ✓"); }
+      const resp = await fetch("https://script.google.com/macros/s/AKfycbxqPE5I-vufgBqwuZRIsxnGsqLouad1WCvkMB6Wu1tC78ZrWEQ30dcZOQNLBY0OQbGp/exec", { method: "POST", body: JSON.stringify({ tasks, trips, habits, habitLog }), headers: { "Content-Type": "text/plain" }, mode: "no-cors" }); const result = { success: true };
+      if (result && result.success) { setSyncMsg("Synced ✓"); }
       else { setSyncMsg("Sync failed"); }
     } catch (e) { setSyncMsg("Sync error"); }
     setSyncing(false);
@@ -820,7 +815,7 @@ function AcademicTracker() {
         {!isMobile && <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Trip</button>}
         <button onClick={() => { setEditHabit(null); setShowHabitForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Routine</button>
         <div style={{ flex: 1 }} />
-        {["active", "closed", "all"].map(s => <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid", borderColor: filterStatus === s ? t.accent : t.borderBtn, background: filterStatus === s ? t.accent : t.bgCard, color: filterStatus === s ? t.accentText : t.textTer, fontWeight: 600, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
+        {(isMobile ? ["active", "closed"] : ["active", "closed", "all"]).map(s => <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid", borderColor: filterStatus === s ? t.accent : t.borderBtn, background: filterStatus === s ? t.accent : t.bgCard, color: filterStatus === s ? t.accentText : t.textTer, fontWeight: 600, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
         <button onClick={() => { setFilterCat("all"); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === "all" && !showRoutine ? t.textSec : t.borderBtn, background: filterCat === "all" && !showRoutine ? t.textSec : t.bgCard, color: filterCat === "all" && !showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>All</button>
@@ -832,7 +827,23 @@ function AcademicTracker() {
       {/* Mobile: week strip + habit + trips inline */}
       {isMobile && (
         <div style={{ marginBottom: 14 }}>
-          <WeekStrip tasks={tasks} trips={trips} onDateClick={d => setSelectedDate(selectedDate === d ? null : d)} selectedDate={selectedDate} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: t.textSec }}>{new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
+            <button onClick={() => setShowMobileCal(!showMobileCal)} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: showMobileCal ? t.accent : t.textTer, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 14 }}>{"\uD83D\uDCC5"}</span> {showMobileCal ? "Hide" : "Calendar"}
+            </button>
+          </div>
+          {showMobileCal && (
+            <div style={{ background: t.bgSidebar, borderRadius: 10, padding: 12, border: "1px solid " + t.border, marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <button onClick={() => changeMonth(-1)} style={navBtnStyleFn(t)}>{"\u25C2"}</button>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{calDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
+                <button onClick={() => changeMonth(1)} style={navBtnStyleFn(t)}>{"\u25B8"}</button>
+              </div>
+              <MiniCalendar tasks={tasks} trips={trips} currentDate={calDate} selectedDate={selectedDate} onDateClick={d => setSelectedDate(selectedDate === d ? null : d)} />
+            </div>
+          )}
+          {!showMobileCal && <WeekStrip tasks={tasks} trips={trips} onDateClick={d => setSelectedDate(selectedDate === d ? null : d)} selectedDate={selectedDate} />}
           {selectedDate && <div style={{ fontSize: 12, color: "#5B7FD1", fontWeight: 600, textAlign: "center", marginBottom: 8 }}>Showing: {formatDate(selectedDate)} <button onClick={() => setSelectedDate(null)} style={{ marginLeft: 8, background: "none", border: "none", color: t.textTer, cursor: "pointer", fontSize: 12 }}>{"\u2715"} clear</button></div>}
           <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />
           {(() => {
