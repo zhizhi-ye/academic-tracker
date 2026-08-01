@@ -642,6 +642,37 @@ function AcademicTracker() {
     setTimeout(() => setSyncMsg(""), 4000);
   };
 
+  const SHEET_ID = "1RhfpEMesNwZfImPumjL8cKiZ7EKAcddZgtqzk_ErHzE";
+  const gvizUrl = (sheetName) => "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/gviz/tq?tqx=out:json&sheet=" + encodeURIComponent(sheetName);
+
+  const parseGviz = (text) => {
+    // Strip JSONP wrapper: /*O_o*/\ngoogle.visualization.Query.setResponse({...});
+    const match = text.match(/setResponse\(([\s\S]+)\);?\s*$/);
+    if (!match) return null;
+    const json = JSON.parse(match[1]);
+    if (json.status !== "ok") return null;
+    const cols = json.table.cols.map(c => c.label);
+    return json.table.rows.map(r => {
+      const obj = {};
+      cols.forEach((col, i) => {
+        const cell = r.c && r.c[i];
+        if (!cell) { obj[col] = ""; return; }
+        // Use formatted value (f) for dates, otherwise raw value (v)
+        if (cell.f && typeof cell.v === "string" && cell.v.startsWith("Date(")) {
+          obj[col] = cell.f;
+        } else if (typeof cell.v === "string" && cell.v.startsWith("Date(")) {
+          // Parse Date(year,month,day) - month is 0-indexed
+          const m = cell.v.match(/Date\((\d+),(\d+),(\d+)/);
+          if (m) obj[col] = m[1] + "-" + String(Number(m[2]) + 1).padStart(2, "0") + "-" + m[3].padStart(2, "0");
+          else obj[col] = cell.f || "";
+        } else {
+          obj[col] = cell.v != null ? String(cell.v) : (cell.f || "");
+        }
+      });
+      return obj;
+    });
+  };
+
   const pullFromSheet = async () => {
     setSyncing(true); setSyncMsg("Pulling...");
     try {
@@ -649,12 +680,22 @@ function AcademicTracker() {
       if (window.electronAPI?.pullFromSheet) {
         data = await window.electronAPI.pullFromSheet();
       } else {
-        // Apps Script redirects to a content URL - fetch follows it automatically
-        const resp = await fetch(SYNC_URL, { method: "GET", redirect: "follow", headers: { "Accept": "application/json" } });
-        if (!resp.ok) throw new Error("HTTP " + resp.status);
-        data = await resp.json();
+        // Fetch all 4 sheets via gviz
+        const [tasksResp, tripsResp, habitsResp, logResp] = await Promise.all([
+          fetch(gvizUrl("Tasks")).then(r => r.text()),
+          fetch(gvizUrl("Trips")).then(r => r.text()).catch(() => ""),
+          fetch(gvizUrl("Habits")).then(r => r.text()).catch(() => ""),
+          fetch(gvizUrl("Habit Log")).then(r => r.text()).catch(() => ""),
+        ]);
+        const tasks = parseGviz(tasksResp) || [];
+        const trips = parseGviz(tripsResp) || [];
+        const habits = parseGviz(habitsResp) || [];
+        const logRows = parseGviz(logResp) || [];
+        const habitLog = {};
+        logRows.forEach(r => { if (r.key) habitLog[r.key] = true; });
+        data = { tasks, trips, habits, habitLog };
       }
-      if (data && data.tasks) {
+      if (data && data.tasks && data.tasks.length > 0) {
         await saveTasks(data.tasks);
         if (data.trips) await saveTrips(data.trips);
         if (data.habits) await saveHabits(data.habits);
