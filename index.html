@@ -649,7 +649,9 @@ function AcademicTracker() {
       if (window.electronAPI?.pullFromSheet) {
         data = await window.electronAPI.pullFromSheet();
       } else {
-        const resp = await fetch(SYNC_URL);
+        // Apps Script redirects to a content URL - fetch follows it automatically
+        const resp = await fetch(SYNC_URL, { method: "GET", redirect: "follow", headers: { "Accept": "application/json" } });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
         data = await resp.json();
       }
       if (data && data.tasks) {
@@ -659,9 +661,9 @@ function AcademicTracker() {
         if (data.habitLog) await saveHabitLog(data.habitLog);
         setSyncMsg("Pulled " + data.tasks.length + " tasks ✓");
       } else { setSyncMsg("Pull: no data"); }
-    } catch (e) { setSyncMsg("Pull error"); }
+    } catch (e) { setSyncMsg("Pull: " + e.message); }
     setSyncing(false);
-    setTimeout(() => setSyncMsg(""), 4000);
+    setTimeout(() => setSyncMsg(""), 6000);
   };
 
   // Load from persistent storage, merging any new seed entries
