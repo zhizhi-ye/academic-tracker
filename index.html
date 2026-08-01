@@ -625,14 +625,41 @@ function AcademicTracker() {
   const [syncMsg, setSyncMsg] = useState("");
   const [showMobileCal, setShowMobileCal] = useState(false);
 
+  const SYNC_URL = "https://script.google.com/macros/s/AKfycbwEV9KIXe4NbiH38QPV38meG2lG4a12Fsh_u_ypO_BfSL8O0J-LbMfIsL_Hk6Hvp70l/exec";
+
   const syncToSheet = async () => {
-    // PWA: use fetch directly
     setSyncing(true); setSyncMsg("");
     try {
-      const resp = await fetch("https://script.google.com/macros/s/AKfycbxqPE5I-vufgBqwuZRIsxnGsqLouad1WCvkMB6Wu1tC78ZrWEQ30dcZOQNLBY0OQbGp/exec", { method: "POST", body: JSON.stringify({ tasks, trips, habits, habitLog }), headers: { "Content-Type": "text/plain" }, mode: "no-cors" }); const result = { success: true };
-      if (result && result.success) { setSyncMsg("Synced ✓"); }
-      else { setSyncMsg("Sync failed"); }
-    } catch (e) { setSyncMsg("Sync error"); }
+      if (window.electronAPI?.syncToSheet) {
+        const result = await window.electronAPI.syncToSheet(JSON.stringify({ tasks, trips, habits, habitLog }));
+        setSyncMsg(result && result.success ? "Pushed ✓" : "Push failed");
+      } else {
+        await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ tasks, trips, habits, habitLog }), headers: { "Content-Type": "text/plain" }, mode: "no-cors" });
+        setSyncMsg("Pushed ✓");
+      }
+    } catch (e) { setSyncMsg("Push error"); }
+    setSyncing(false);
+    setTimeout(() => setSyncMsg(""), 4000);
+  };
+
+  const pullFromSheet = async () => {
+    setSyncing(true); setSyncMsg("Pulling...");
+    try {
+      let data;
+      if (window.electronAPI?.pullFromSheet) {
+        data = await window.electronAPI.pullFromSheet();
+      } else {
+        const resp = await fetch(SYNC_URL);
+        data = await resp.json();
+      }
+      if (data && data.tasks) {
+        await saveTasks(data.tasks);
+        if (data.trips) await saveTrips(data.trips);
+        if (data.habits) await saveHabits(data.habits);
+        if (data.habitLog) await saveHabitLog(data.habitLog);
+        setSyncMsg("Pulled " + data.tasks.length + " tasks ✓");
+      } else { setSyncMsg("Pull: no data"); }
+    } catch (e) { setSyncMsg("Pull error"); }
     setSyncing(false);
     setTimeout(() => setSyncMsg(""), 4000);
   };
@@ -796,9 +823,12 @@ function AcademicTracker() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.02em" }}>Academic Tracker</h1>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {syncMsg && <span style={{ fontSize: 11, color: syncMsg.includes("✓") ? "#2A7A3A" : "#B04040", fontWeight: 600 }}>{syncMsg}</span>}
-            <button onClick={syncToSheet} disabled={syncing} title="Sync tasks to Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#5B7FD1", fontWeight: 600, cursor: syncing ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ fontSize: 14 }}>{syncing ? "⏳" : "🔄"}</span> Sync
+            {syncMsg && <span style={{ fontSize: 11, color: syncMsg.includes("✓") ? "#2A7A3A" : syncMsg.includes("...") ? t.textTer : "#B04040", fontWeight: 600 }}>{syncMsg}</span>}
+            <button onClick={syncToSheet} disabled={syncing} title="Push data to Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#5B7FD1", fontWeight: 600, cursor: syncing ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 13 }}>{"\u25B2"}</span> Push
+            </button>
+            <button onClick={pullFromSheet} disabled={syncing} title="Pull data from Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#D4883A", fontWeight: 600, cursor: syncing ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 13 }}>{"\u25BC"}</span> Pull
             </button>
             <a href={SHEET_URL} target="_blank" rel="noopener noreferrer" title="Open Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#2A7A3A", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 14 }}>📊</span> Sheet
