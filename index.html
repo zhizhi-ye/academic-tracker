@@ -24,7 +24,6 @@
   }
   @media (prefers-color-scheme: dark) { html, body { background: #12121f; color: #e8e8f0; } }
   @media (prefers-color-scheme: light) { html, body { background: #f9fafb; color: #1a1a2e; } }
-  /* Mobile touch improvements */
   button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   input[type="date"] { -webkit-appearance: none; }
   ::-webkit-scrollbar { width: 0; height: 0; }
@@ -32,52 +31,20 @@
 </head>
 <body>
 <div id="root"></div>
-
-<!-- React 18 via CDN -->
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<!-- Babel for JSX transpilation in-browser -->
 <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-<!-- window.storage polyfill using localStorage -->
 <script>
 if (!window.storage) {
   window.storage = {
-    async get(key) {
-      const val = localStorage.getItem("at:" + key);
-      if (val === null) return null;
-      return { key: key, value: val };
-    },
-    async set(key, value) {
-      localStorage.setItem("at:" + key, value);
-      return { key: key, value: value };
-    },
-    async delete(key) {
-      localStorage.removeItem("at:" + key);
-      return { key: key, deleted: true };
-    },
-    async list(prefix) {
-      const keys = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k.startsWith("at:")) {
-          const realKey = k.slice(3);
-          if (!prefix || realKey.startsWith(prefix)) keys.push(realKey);
-        }
-      }
-      return { keys: keys };
-    }
+    async get(key) { const val = localStorage.getItem("at:" + key); if (val === null) return null; return { key: key, value: val }; },
+    async set(key, value) { localStorage.setItem("at:" + key, value); return { key: key, value: value }; },
+    async delete(key) { localStorage.removeItem("at:" + key); return { key: key, deleted: true }; },
+    async list(prefix) { const keys = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("at:")) { const realKey = k.slice(3); if (!prefix || realKey.startsWith(prefix)) keys.push(realKey); } } return { keys: keys }; }
   };
 }
 </script>
-
-<!-- Service Worker registration -->
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(function() {});
-}
-</script>
-
+<script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function() {}); }</script>
 <script type="text/babel" data-type="module">
 const { useState, useEffect, useCallback, useRef } = React;
 
@@ -577,8 +544,71 @@ function MonthlyRoutine({ habits, log, onToggle, calDate, onEditHabit, onDeleteH
   );
 }
 
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 640);
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth < 640);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return mobile;
+}
+
+function WeekStrip({ tasks, trips, onDateClick, selectedDate }) {
+  const t = React.useContext(ThemeCtx);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = [];
+  const startOfWeek = new Date(today);
+  const dow = startOfWeek.getDay();
+  startOfWeek.setDate(startOfWeek.getDate() - (dow === 0 ? 6 : dow - 1));
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i);
+    days.push(d);
+  }
+  const tasksByDate = {};
+  tasks.forEach(tk => {
+    [tk.deadline, tk.interviewDate, tk.notificationDate, tk.conferenceDate].filter(Boolean).forEach(d => {
+      if (!tasksByDate[d]) tasksByDate[d] = [];
+      tasksByDate[d].push(tk);
+    });
+  });
+  const tripDates = {};
+  (trips || []).forEach(trip => {
+    datesInRange(trip.startDate, trip.endDate).forEach(d => { tripDates[d] = true; });
+  });
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return (
+    <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
+      {days.map((d, i) => {
+        const ds = localDateStr(d);
+        const isToday = ds === localDateStr(today);
+        const isSelected = selectedDate === ds;
+        const hasTasks = tasksByDate[ds];
+        const isTrip = tripDates[ds];
+        const dots = hasTasks ? [...new Set(hasTasks.map(tk => (CATEGORIES.find(c => c.id === tk.category) || {}).color || "#999"))] : [];
+        return (
+          <button key={i} onClick={() => onDateClick(ds)} style={{
+            flex: 1, padding: "6px 2px 4px", borderRadius: 8, border: isSelected ? "2px solid " + t.accent : isToday ? "2px solid " + t.accent + "60" : "2px solid transparent",
+            background: isSelected ? t.accent : isTrip ? t.accent + "10" : "transparent",
+            color: isSelected ? t.accentText : isToday ? t.text : t.textSec,
+            fontWeight: isToday || isSelected ? 700 : 400, fontSize: 12, cursor: "pointer",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 2
+          }}>
+            <span style={{ fontSize: 9, textTransform: "uppercase", fontWeight: 600, color: isSelected ? t.accentText : t.textTer }}>{dayNames[i]}</span>
+            {d.getDate()}
+            {dots.length > 0 && <div style={{ display: "flex", gap: 2, minHeight: 4 }}>{dots.slice(0, 3).map((c, j) => <span key={j} style={{ width: 4, height: 4, borderRadius: "50%", background: isSelected ? t.accentText : c }} />)}</div>}
+            {dots.length === 0 && <div style={{ minHeight: 4 }} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function AcademicTracker() {
   const t = useTheme();
+  const isMobile = useIsMobile();
   const [tasks, setTasks] = useState([]);
   const [trips, setTrips] = useState([]);
   const [habits, setHabits] = useState([]);
@@ -597,6 +627,20 @@ function AcademicTracker() {
   const [loaded, setLoaded] = useState(false);
   const [recentlyDeleted, setRecentlyDeleted] = useState([]);
   const undoTimeoutRef = useRef(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+
+  const syncToSheet = async () => {
+    // PWA: use fetch directly
+    setSyncing(true); setSyncMsg("");
+    try {
+      const resp = await fetch("https://script.google.com/macros/s/AKfycbyjEdD-TcScTqjjuiY95jyTq9A1Y5lVxxaNVNORLXgRLfc-CGdcnnjEyDnXsftRh13M/exec", { method: "POST", body: JSON.stringify({ tasks }), headers: { "Content-Type": "text/plain" }, mode: "no-cors" }); const result = { success: true, count: tasks.length };
+      if (result && result.success) { setSyncMsg("Synced " + (result.count || tasks.length) + " tasks ✓"); }
+      else { setSyncMsg("Sync failed"); }
+    } catch (e) { setSyncMsg("Sync error"); }
+    setSyncing(false);
+    setTimeout(() => setSyncMsg(""), 4000);
+  };
 
   // Load from persistent storage, merging any new seed entries
   useEffect(() => {
@@ -756,9 +800,15 @@ function AcademicTracker() {
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.02em" }}>Academic Tracker</h1>
-          <a href={SHEET_URL} target="_blank" rel="noopener noreferrer" title="Open Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#2A7A3A", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ fontSize: 14 }}>📊</span> Sheet
-          </a>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {syncMsg && <span style={{ fontSize: 11, color: syncMsg.includes("✓") ? "#2A7A3A" : "#B04040", fontWeight: 600 }}>{syncMsg}</span>}
+            <button onClick={syncToSheet} disabled={syncing} title="Sync tasks to Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#5B7FD1", fontWeight: 600, cursor: syncing ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 14 }}>{syncing ? "⏳" : "🔄"}</span> Sync
+            </button>
+            <a href={SHEET_URL} target="_blank" rel="noopener noreferrer" title="Open Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#2A7A3A", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 14 }}>📊</span> Sheet
+            </a>
+          </div>
         </div>
         <p style={{ margin: 0, fontSize: 13, color: t.textTer }}>
           {activeTasks.length} active task{activeTasks.length !== 1 ? "s" : ""}
@@ -767,7 +817,7 @@ function AcademicTracker() {
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={() => { setEditTask(null); setShowForm(true); }} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: t.accent, color: t.accentText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Task</button>
-        <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Trip</button>
+        {!isMobile && <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Trip</button>}
         <button onClick={() => { setEditHabit(null); setShowHabitForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Routine</button>
         <div style={{ flex: 1 }} />
         {["active", "closed", "all"].map(s => <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid", borderColor: filterStatus === s ? t.accent : t.borderBtn, background: filterStatus === s ? t.accent : t.bgCard, color: filterStatus === s ? t.accentText : t.textTer, fontWeight: 600, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
@@ -776,8 +826,42 @@ function AcademicTracker() {
         <button onClick={() => { setFilterCat("all"); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === "all" && !showRoutine ? t.textSec : t.borderBtn, background: filterCat === "all" && !showRoutine ? t.textSec : t.bgCard, color: filterCat === "all" && !showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>All</button>
         {CATEGORIES.map(c => <button key={c.id} onClick={() => { setFilterCat(c.id); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === c.id && !showRoutine ? c.color : t.borderBtn, background: filterCat === c.id && !showRoutine ? c.color + "18" : t.bgCard, color: filterCat === c.id && !showRoutine ? c.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>{c.label}</button>)}
         <button onClick={() => setShowRoutine(!showRoutine)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showRoutine ? t.accent : t.borderBtn, background: showRoutine ? t.accent : t.bgCard, color: showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Daily Routine</button>
+        {isMobile && <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>+ Trip</button>}
       </div>
+
+      {/* Mobile: week strip + habit + trips inline */}
+      {isMobile && (
+        <div style={{ marginBottom: 14 }}>
+          <WeekStrip tasks={tasks} trips={trips} onDateClick={d => setSelectedDate(selectedDate === d ? null : d)} selectedDate={selectedDate} />
+          {selectedDate && <div style={{ fontSize: 12, color: "#5B7FD1", fontWeight: 600, textAlign: "center", marginBottom: 8 }}>Showing: {formatDate(selectedDate)} <button onClick={() => setSelectedDate(null)} style={{ marginLeft: 8, background: "none", border: "none", color: t.textTer, cursor: "pointer", fontSize: 12 }}>{"\u2715"} clear</button></div>}
+          <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />
+          {(() => {
+            const now = new Date();
+            const thisMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+            const monthTrips = trips.filter(tr => tr.startDate.slice(0, 7) === thisMonth || tr.endDate.slice(0, 7) === thisMonth);
+            if (monthTrips.length === 0) return null;
+            return (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid " + t.borderLight }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: t.textTer, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Trips this month</div>
+                {monthTrips.sort((a, b) => a.startDate.localeCompare(b.startDate)).map(trip => (
+                  <div key={trip.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 4, gap: 4 }}>
+                    <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ fontWeight: 600, color: t.textSec }}>{trip.title}</span>
+                      <span style={{ color: t.textQuad }}> · {formatDate(trip.startDate)}–{formatDate(trip.endDate)}</span>
+                    </div>
+                    <button onClick={() => handleEditTrip(trip)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 11, padding: 2 }}>{"\u270E"}</button>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Main content area */}
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+        {/* Desktop sidebar */}
+        {!isMobile && (
         <div style={{ width: 260, flexShrink: 0, background: t.bgSidebar, borderRadius: 12, padding: 16, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <button onClick={() => changeMonth(-1)} style={navBtnStyleFn(t)}>{"\u25C2"}</button>
@@ -809,7 +893,8 @@ function AcademicTracker() {
             </div>
           )}
         </div>
-        <div style={{ flex: 1, minWidth: 300 }}>
+        )}
+        <div style={{ flex: 1, minWidth: isMobile ? 0 : 300 }}>
           {recentlyDeleted.map(d => (
             <div key={d.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", marginBottom: 10, borderRadius: 10, background: t.undoBg, border: "1px solid " + t.undoBorder }}>
               <span style={{ fontSize: 13, color: t.undoText, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

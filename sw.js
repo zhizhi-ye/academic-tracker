@@ -1,4 +1,4 @@
-const CACHE_NAME = "academic-tracker-v1";
+const CACHE_NAME = "academic-tracker-v3";
 const ASSETS = [
   "./index.html",
   "./manifest.json",
