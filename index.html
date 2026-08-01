@@ -618,6 +618,7 @@ function AcademicTracker() {
   const [calDate, setCalDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
   const [showRoutine, setShowRoutine] = useState(false);
+  const [showTrips, setShowTrips] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [recentlyDeleted, setRecentlyDeleted] = useState([]);
   const undoTimeoutRef = useRef(null);
@@ -919,9 +920,10 @@ function AcademicTracker() {
         {(isMobile ? ["active", "closed"] : ["active", "closed", "all"]).map(s => <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid", borderColor: filterStatus === s ? t.accent : t.borderBtn, background: filterStatus === s ? t.accent : t.bgCard, color: filterStatus === s ? t.accentText : t.textTer, fontWeight: 600, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
-        <button onClick={() => { setFilterCat("all"); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === "all" && !showRoutine ? t.textSec : t.borderBtn, background: filterCat === "all" && !showRoutine ? t.textSec : t.bgCard, color: filterCat === "all" && !showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>All</button>
-        {CATEGORIES.map(c => <button key={c.id} onClick={() => { setFilterCat(c.id); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === c.id && !showRoutine ? c.color : t.borderBtn, background: filterCat === c.id && !showRoutine ? c.color + "18" : t.bgCard, color: filterCat === c.id && !showRoutine ? c.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>{c.label}</button>)}
-        <button onClick={() => setShowRoutine(!showRoutine)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showRoutine ? t.accent : t.borderBtn, background: showRoutine ? t.accent : t.bgCard, color: showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Daily Routine</button>
+        <button onClick={() => { setFilterCat("all"); setShowRoutine(false); setShowTrips(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === "all" && !showRoutine && !showTrips ? t.textSec : t.borderBtn, background: filterCat === "all" && !showRoutine && !showTrips ? t.textSec : t.bgCard, color: filterCat === "all" && !showRoutine && !showTrips ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>All</button>
+        {CATEGORIES.map(c => <button key={c.id} onClick={() => { setFilterCat(c.id); setShowRoutine(false); setShowTrips(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === c.id && !showRoutine && !showTrips ? c.color : t.borderBtn, background: filterCat === c.id && !showRoutine && !showTrips ? c.color + "18" : t.bgCard, color: filterCat === c.id && !showRoutine && !showTrips ? c.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>{c.label}</button>)}
+        <button onClick={() => { setShowRoutine(!showRoutine); setShowTrips(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showRoutine ? t.accent : t.borderBtn, background: showRoutine ? t.accent : t.bgCard, color: showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Daily Routine</button>
+        {isMobile && <button onClick={() => { setShowTrips(!showTrips); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showTrips ? t.accent : t.borderBtn, background: showTrips ? t.accent : t.bgCard, color: showTrips ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Trips</button>}
       </div>
 
       {/* Mobile: week strip + habit + trips inline */}
@@ -946,26 +948,6 @@ function AcademicTracker() {
           {!showMobileCal && <WeekStrip tasks={tasks} trips={trips} onDateClick={d => setSelectedDate(selectedDate === d ? null : d)} selectedDate={selectedDate} />}
           {selectedDate && <div style={{ fontSize: 12, color: "#5B7FD1", fontWeight: 600, textAlign: "center", marginBottom: 8 }}>Showing: {formatDate(selectedDate)} <button onClick={() => setSelectedDate(null)} style={{ marginLeft: 8, background: "none", border: "none", color: t.textTer, cursor: "pointer", fontSize: 12 }}>{"\u2715"} clear</button></div>}
           <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />
-          {(() => {
-            const now = new Date();
-            const thisMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
-            const monthTrips = trips.filter(tr => tr.startDate.slice(0, 7) === thisMonth || tr.endDate.slice(0, 7) === thisMonth);
-            if (monthTrips.length === 0) return null;
-            return (
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid " + t.borderLight }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: t.textTer, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Trips this month</div>
-                {monthTrips.sort((a, b) => a.startDate.localeCompare(b.startDate)).map(trip => (
-                  <div key={trip.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 4, gap: 4 }}>
-                    <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <span style={{ fontWeight: 600, color: t.textSec }}>{trip.title}</span>
-                      <span style={{ color: t.textQuad }}> · {formatDate(trip.startDate)}–{formatDate(trip.endDate)}</span>
-                    </div>
-                    <button onClick={() => handleEditTrip(trip)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 11, padding: 2 }}>{"\u270E"}</button>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
         </div>
       )}
 
@@ -1017,7 +999,28 @@ function AcademicTracker() {
               </div>
             </div>
           ))}
-          {showRoutine ? (
+          {showTrips ? (
+            <div style={{ background: t.bgCard, borderRadius: 12, padding: 18, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: t.text, margin: "0 0 14px" }}>All Trips</h3>
+              {trips.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "30px 20px", color: t.textFaint, fontSize: 13 }}>No trips yet — tap "+ Trip" to add one.</div>
+              ) : (
+                [...trips].sort((a, b) => a.startDate.localeCompare(b.startDate)).map(trip => (
+                  <div key={trip.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: t.bgEmpty, border: "1px solid " + t.borderLight, gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: t.text, marginBottom: 2 }}>{trip.title}</div>
+                      <div style={{ fontSize: 12, color: t.textTer }}>{formatDate(trip.startDate)} – {formatDate(trip.endDate)}</div>
+                      {trip.notes && <div style={{ fontSize: 11, color: t.textQuad, marginTop: 2 }}>{trip.notes}</div>}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <button onClick={() => handleEditTrip(trip)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 12, padding: 2 }}>{"\u270E"}</button>
+                      <button onClick={() => deleteTrip(trip.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 14, padding: 2 }}>{"\u2715"}</button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : showRoutine ? (
             <MonthlyRoutine habits={habits} log={habitLog} onToggle={toggleHabit} calDate={calDate} onEditHabit={handleEditHabit} onDeleteHabit={deleteHabit} />
           ) : sorted.length === 0 ? (
             <div style={{ textAlign: "center", padding: "50px 20px", color: t.textFaint, fontSize: 14, background: t.bgEmpty, borderRadius: 12, border: "1px dashed " + t.borderBtn }}>
