@@ -893,7 +893,6 @@ function AcademicTracker() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.02em" }}>Academic Tracker</h1>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {syncMsg && <span style={{ fontSize: 11, color: syncMsg.includes("✓") ? "#2A7A3A" : syncMsg.includes("...") ? t.textTer : "#B04040", fontWeight: 600 }}>{syncMsg}</span>}
             <button onClick={syncToSheet} disabled={syncing} title="Push data to Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#5B7FD1", fontWeight: 600, cursor: syncing ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 13 }}>{"\u25B2"}</span> Push
             </button>
@@ -905,23 +904,24 @@ function AcademicTracker() {
             </a>
           </div>
         </div>
+        {syncMsg && <div style={{ fontSize: 11, color: syncMsg.includes("✓") ? "#2A7A3A" : syncMsg.includes("...") ? t.textTer : "#B04040", fontWeight: 600, textAlign: "right", marginTop: 2 }}>{syncMsg}</div>}
         <p style={{ margin: 0, fontSize: 13, color: t.textTer }}>
           {activeTasks.length} active task{activeTasks.length !== 1 ? "s" : ""}
           {urgentCount > 0 && <span style={{ color: "#D4883A", fontWeight: 600 }}>{" \u00B7 "}{urgentCount} due soon</span>}
         </p>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={() => { setEditTask(null); setShowForm(true); }} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: t.accent, color: t.accentText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Task</button>
-        {!isMobile && <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Trip</button>}
+        <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Trip</button>
         <button onClick={() => { setEditHabit(null); setShowHabitForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Routine</button>
-        <div style={{ flex: 1 }} />
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         {(isMobile ? ["active", "closed"] : ["active", "closed", "all"]).map(s => <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid", borderColor: filterStatus === s ? t.accent : t.borderBtn, background: filterStatus === s ? t.accent : t.bgCard, color: filterStatus === s ? t.accentText : t.textTer, fontWeight: 600, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
         <button onClick={() => { setFilterCat("all"); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === "all" && !showRoutine ? t.textSec : t.borderBtn, background: filterCat === "all" && !showRoutine ? t.textSec : t.bgCard, color: filterCat === "all" && !showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>All</button>
         {CATEGORIES.map(c => <button key={c.id} onClick={() => { setFilterCat(c.id); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === c.id && !showRoutine ? c.color : t.borderBtn, background: filterCat === c.id && !showRoutine ? c.color + "18" : t.bgCard, color: filterCat === c.id && !showRoutine ? c.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>{c.label}</button>)}
         <button onClick={() => setShowRoutine(!showRoutine)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showRoutine ? t.accent : t.borderBtn, background: showRoutine ? t.accent : t.bgCard, color: showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Daily Routine</button>
-        {isMobile && <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>+ Trip</button>}
       </div>
 
       {/* Mobile: week strip + habit + trips inline */}
