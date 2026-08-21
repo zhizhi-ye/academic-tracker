@@ -82,6 +82,17 @@ const CATEGORIES = [
   { id: "job", label: "Job Application", color: "#5B7FD1" },
   { id: "cfp", label: "Call For Paper", color: "#D4883A" },
   { id: "review", label: "Paper Review", color: "#8B5CF6" },
+  { id: "paper", label: "Paper in Progress", color: "#E05A7A" },
+];
+
+const PAPER_PHASES = ["RQ", "Method", "Structure"];
+const PAPER_SECTIONS_DEFAULT = [
+  { id: "intro", name: "Introduction", words: 0, d1: [false, false, false], d2: false, final: false },
+  { id: "case", name: "Case Study", words: 0, d1: [false, false, false], d2: false, final: false },
+  { id: "framework", name: "Framework", words: 0, d1: [false, false, false], d2: false, final: false },
+  { id: "discussion", name: "Discussion", words: 0, d1: [false, false, false], d2: false, final: false },
+  { id: "conclusion", name: "Conclusion", words: 0, d1: [false, false, false], d2: false, final: false },
+  { id: "ref", name: "Ref & Format", words: 0, d1: [false, false, false], d2: false, final: false },
 ];
 
 const STATUS = {
@@ -108,6 +119,64 @@ const HABIT_COLORS = ["#5B7FD1", "#D4883A", "#8B5CF6", "#E05A7A", "#10B981", "#6
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function formatDate(s) { if (!s) return "\u2014"; const d = new Date(s + "T00:00:00"); return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); }
 function daysBetween(s) { if (!s) return null; const t = new Date(); t.setHours(0, 0, 0, 0); return Math.ceil((new Date(s + "T00:00:00") - t) / 864e5); }
+
+function daysSinceCreated(createdAt) {
+  if (!createdAt) return null;
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.floor((t - new Date(createdAt + "T00:00:00")) / 864e5);
+}
+function needsReminder(task) {
+  if (task.deadline) return false;
+  const closed = ["noreply", "success", "reviewed", "notapplied", "nointerview"];
+  if (closed.includes(task.status)) return false;
+  const days = daysSinceCreated(task.createdAt);
+  if (days === null) return false;
+  return days > 0 && days % 3 === 0;
+}
+
+function downloadICS(task) {
+  const cat = CATEGORIES.find(c => c.id === task.category);
+  const catLabel = cat ? cat.label : "Task";
+  const dateStr = task.deadline;
+  if (!dateStr) return;
+  const d = dateStr.replace(/-/g, "");
+  let dtStart, dtEnd;
+  if (task.deadlineTime) {
+    const timeParts = task.deadlineTime.replace(/[^0-9:]/g, "").split(":");
+    const hh = (timeParts[0] || "00").padStart(2, "0");
+    const mm = (timeParts[1] || "00").padStart(2, "0");
+    dtStart = d + "T" + hh + mm + "00";
+    const endH = String(Math.min(23, parseInt(hh) + 1)).padStart(2, "0");
+    dtEnd = d + "T" + endH + mm + "00";
+  } else {
+    const next = new Date(dateStr + "T00:00:00");
+    next.setDate(next.getDate() + 1);
+    const nd = localDateStr(next).replace(/-/g, "");
+    dtStart = d; dtEnd = nd;
+  }
+  const esc = (s) => (s || "").replace(/[\\;,\n]/g, (m) => m === "\n" ? "\\n" : "\\" + m);
+  const uid = task.id + "@academic-tracker";
+  const now = new Date();
+  const stamp = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0") + "T" + String(now.getHours()).padStart(2, "0") + String(now.getMinutes()).padStart(2, "0") + String(now.getSeconds()).padStart(2, "0");
+  const isAllDay = !task.deadlineTime;
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AcademicTracker//EN",
+    "BEGIN:VEVENT", "UID:" + uid, "DTSTAMP:" + stamp,
+    isAllDay ? "DTSTART;VALUE=DATE:" + dtStart : "DTSTART:" + dtStart,
+    isAllDay ? "DTEND;VALUE=DATE:" + dtEnd : "DTEND:" + dtEnd,
+    "SUMMARY:" + esc("[" + catLabel + "] " + task.title),
+    "DESCRIPTION:" + esc((task.notes || "") + (task.url ? "\\n" + task.url : "")),
+    "BEGIN:VALARM", "TRIGGER:-P1D", "ACTION:DISPLAY",
+    "DESCRIPTION:Due tomorrow: " + esc(task.title), "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR",
+  ];
+  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url;
+  a.download = task.title.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_").slice(0, 40) + ".ics";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 function localDateStr(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function getRecentDays(n) {
@@ -170,13 +239,15 @@ function TaskForm({ onAdd, onClose, editTask, onSaveEdit }) {
   const [confDate, setConfDate] = useState(editTask ? editTask.conferenceDate || "" : "");
   const [notes, setNotes] = useState(editTask ? editTask.notes : "");
   const [status, setStatus] = useState(editTask ? editTask.status : "pending");
-  const ok = title.trim() && deadline;
+  const [paperTarget, setPaperTarget] = useState(editTask ? editTask.paperTarget || "" : "");
+  const isPaper = category === "paper";
+  const ok = title.trim() && (isPaper || deadline);
   const isJob = category === "job";
   const isReview = category === "review";
   const isEditing = !!editTask;
   const handleSubmit = () => {
     if (!ok) return;
-    const base = { title: title.trim(), url: url.trim(), category, deadline, deadlineTime: deadlineTime.trim(), interviewDate: isJob ? secondDate : "", notificationDate: category === "cfp" ? secondDate : "", conferenceDate: category === "cfp" ? confDate : "", notes: notes.trim() };
+    const base = { title: title.trim(), url: url.trim(), category, deadline, deadlineTime: deadlineTime.trim(), interviewDate: isJob ? secondDate : "", notificationDate: category === "cfp" ? secondDate : "", conferenceDate: category === "cfp" ? confDate : "", notes: notes.trim(), paperTarget: isPaper ? paperTarget.trim() : "", ...(isPaper && !isEditing ? { paperPhases: [false, false, false], paperSections: PAPER_SECTIONS_DEFAULT.map(s => ({ ...s, d1: [...s.d1] })) } : {}) };
     if (isEditing) {
       onSaveEdit({ ...editTask, ...base, status });
     } else {
@@ -196,11 +267,15 @@ function TaskForm({ onAdd, onClose, editTask, onSaveEdit }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           {CATEGORIES.map(c => <button key={c.id} onClick={() => setCategory(c.id)} style={{ flex: 1, padding: "8px 4px", borderRadius: 8, border: "2px solid", borderColor: category === c.id ? c.color : "#e0e0e0", background: category === c.id ? c.color + "18" : t.bgEmpty, color: category === c.id ? c.color : "#777", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{c.label}</button>)}
         </div>
+        {isPaper && (
+          <><label style={labelStyleFn(t)}>Target Journal / Venue</label>
+          <input value={paperTarget} onChange={e => setPaperTarget(e.target.value)} placeholder="e.g. Humanities & Social Sciences Communications" style={inputStyleFn(t)} /></>
+        )}
         <div style={{ display: "flex", gap: 14 }}>
-          <div style={{ flex: 2 }}><label style={labelStyleFn(t)}>{isReview ? "Review Deadline *" : "Submission Deadline *"}</label><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} style={inputStyleFn(t)} /></div>
+          <div style={{ flex: 2 }}><label style={labelStyleFn(t)}>{isReview ? "Review Deadline *" : isPaper ? "Deadline (optional)" : "Submission Deadline *"}</label><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} style={inputStyleFn(t)} /></div>
           <div style={{ flex: 1 }}><label style={labelStyleFn(t)}>Time</label><input value={deadlineTime} onChange={e => setDeadlineTime(e.target.value)} placeholder="e.g. 17:00" style={inputStyleFn(t)} /></div>
         </div>
-        {!isReview && (
+        {!isReview && !isPaper && (
           <div style={{ display: "flex", gap: 14 }}>
             <div style={{ flex: 1 }}><label style={labelStyleFn(t)}>{isJob ? "Interview Date" : "Notification Date"}</label><input type="date" value={secondDate} onChange={e => setSecondDate(e.target.value)} style={inputStyleFn(t)} /></div>
           </div>
@@ -253,12 +328,15 @@ function TaskCard({ task, onStatusChange, onDelete, onEdit }) {
             <DeadlineBadge dateStr={task.deadline} label="Deadline" submitted={submitted} time={task.deadlineTime} />
             {secondVal && <DeadlineBadge dateStr={secondVal} label={secondLabel} submitted={false} />}
             {!isReview && task.conferenceDate && <DeadlineBadge dateStr={task.conferenceDate} label="Conference" submitted={false} />}
+            {!task.deadline && needsReminder(task) && <span style={{ fontSize: 11, color: "#D4883A", fontWeight: 600 }}>⏰ No deadline — check on this</span>}
+            {!task.deadline && !needsReminder(task) && !submitted && <span style={{ fontSize: 11, color: "#aaa" }}>No deadline set</span>}
           </div>
           {task.notes && <div style={{ fontSize: 12, color: t.textTer, marginTop: 6, lineHeight: 1.4 }}>{task.notes}</div>}
         </div>
         <div style={{ display: "flex", gap: 2, flexShrink: 0, alignItems: "center" }}>
           {!confirming ? (
             <>
+              {task.deadline && <button onClick={() => downloadICS(task)} title="Add to Calendar (.ics)" style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 13, padding: 4, lineHeight: 1 }}>📅</button>}
               <button onClick={() => onEdit(task)} title="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 13, padding: 4, lineHeight: 1 }}>{"\u270E"}</button>
               <button onClick={() => setConfirming(true)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 16, padding: 4, lineHeight: 1 }}>{"\u2715"}</button>
             </>
@@ -291,6 +369,112 @@ function TaskCard({ task, onStatusChange, onDelete, onEdit }) {
           <button onClick={() => onStatusChange(task.id, "pending")} style={{ fontSize: 11, color: t.textTer, background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>{"\u21A9"} Reopen</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function PaperCard({ task, onEdit, onDelete, onUpdatePaper }) {
+  const [confirming, setConfirming] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const t = React.useContext(ThemeCtx);
+  const cat = CATEGORIES.find(c => c.id === "paper");
+  const closed = task.status === "noreply" || task.status === "success" || task.status === "notapplied";
+  const phases = task.paperPhases || [false, false, false];
+  const sections = task.paperSections || PAPER_SECTIONS_DEFAULT;
+  const totalWords = sections.reduce((s, sec) => s + (sec.words || 0), 0);
+  const totalChecks = sections.reduce((s, sec) => s + sec.d1.filter(Boolean).length + (sec.d2 ? 1 : 0) + (sec.final ? 1 : 0), 0);
+  const maxChecks = sections.length * 5;
+  const togglePhase = (idx) => { const np = [...phases]; np[idx] = !np[idx]; onUpdatePaper(task.id, { paperPhases: np }); };
+  const updateSection = (secIdx, field, value) => {
+    const ns = sections.map((sec, i) => {
+      if (i !== secIdx) return sec;
+      if (field === "words") return { ...sec, words: Math.max(0, parseInt(value) || 0) };
+      if (field.startsWith("d1-")) { const di = parseInt(field.split("-")[1]); const nd1 = [...sec.d1]; nd1[di] = !nd1[di]; return { ...sec, d1: nd1 }; }
+      if (field === "d2") return { ...sec, d2: !sec.d2 };
+      if (field === "final") return { ...sec, final: !sec.final };
+      return sec;
+    });
+    onUpdatePaper(task.id, { paperSections: ns });
+  };
+  const addSection = () => { const name = prompt("Section name:"); if (!name || !name.trim()) return; const ns = [...sections, { id: generateId(), name: name.trim(), words: 0, d1: [false, false, false], d2: false, final: false }]; onUpdatePaper(task.id, { paperSections: ns }); };
+  const removeSection = (secIdx) => { onUpdatePaper(task.id, { paperSections: sections.filter((_, i) => i !== secIdx) }); };
+  const Check = ({ checked, onClick, color }) => (
+    <button onClick={onClick} style={{ width: 20, height: 20, borderRadius: 4, border: "1.5px solid " + (checked ? color : t.borderInput), background: checked ? color : "transparent", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff", lineHeight: 1, flexShrink: 0, WebkitTapHighlightColor: "transparent" }}>
+      {checked ? "■" : ""}
+    </button>
+  );
+  return (
+    <div style={{ background: closed ? t.bgCardClosed : t.bgCard, borderRadius: 12, padding: "16px 18px", border: "1px solid " + (closed ? t.borderLight : t.border), opacity: closed ? 0.6 : 1, boxShadow: closed ? "none" : "0 2px 8px rgba(0,0,0,0.04)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: cat.color, background: cat.color + "15", padding: "2px 8px", borderRadius: 4 }}>📝 {cat.label}</span>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 2, lineHeight: 1.3 }}>
+            {task.url ? <a href={task.url} target="_blank" rel="noopener noreferrer" style={{ color: t.text, textDecoration: "none", borderBottom: "1px dashed " + t.textQuad }}>{task.title} ↗</a> : task.title}
+          </div>
+          {task.paperTarget && <div style={{ fontSize: 11, color: t.textTer, marginBottom: 6 }}>Target: {task.paperTarget}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 2, flexShrink: 0, alignItems: "center" }}>
+          {!confirming ? (<>
+            <button onClick={() => onEdit(task)} title="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 13, padding: 4, lineHeight: 1 }}>✎</button>
+            <button onClick={() => setConfirming(true)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 16, padding: 4, lineHeight: 1 }}>✕</button>
+          </>) : (<div style={{ display: "flex", gap: 4 }}>
+            <button onClick={() => onDelete(task.id)} style={{ padding: "3px 8px", borderRadius: 5, border: "none", background: "#B04040", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Delete</button>
+            <button onClick={() => setConfirming(false)} style={{ padding: "3px 8px", borderRadius: 5, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textTer, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+          </div>)}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+        {PAPER_PHASES.map((ph, i) => (
+          <button key={ph} onClick={() => togglePhase(i)} style={{ padding: "4px 10px", borderRadius: 6, border: "1.5px solid " + (phases[i] ? cat.color : t.borderBtn), background: phases[i] ? cat.color + "18" : "transparent", color: phases[i] ? cat.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            {phases[i] ? "■" : "□"} {ph}
+          </button>
+        ))}
+        <span style={{ fontSize: 12, color: t.textTer, marginLeft: 4 }}>Writing: {totalChecks}/{maxChecks} · {totalWords.toLocaleString()}w</span>
+      </div>
+      <button onClick={() => setExpanded(!expanded)} style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer", color: t.textTer, fontSize: 11, fontWeight: 600, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
+        {expanded ? "▾ Hide writing progress" : "▸ Show writing progress"}
+      </button>
+      {expanded && (
+        <div style={{ marginTop: 10, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead><tr style={{ borderBottom: "1px solid " + t.borderLight }}>
+              <th style={{ textAlign: "left", padding: "4px 6px", color: t.textTer, fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Section</th>
+              <th style={{ textAlign: "right", padding: "4px 6px", color: t.textTer, fontWeight: 600, fontSize: 10, width: 60 }}>Words</th>
+              <th style={{ textAlign: "center", padding: "4px 6px", color: t.textTer, fontWeight: 600, fontSize: 10 }}>1st Draft</th>
+              <th style={{ textAlign: "center", padding: "4px 6px", color: t.textTer, fontWeight: 600, fontSize: 10 }}>2nd</th>
+              <th style={{ textAlign: "center", padding: "4px 6px", color: t.textTer, fontWeight: 600, fontSize: 10 }}>Final</th>
+              <th style={{ width: 24 }}></th>
+            </tr></thead>
+            <tbody>{sections.map((sec, si) => (
+              <tr key={sec.id} style={{ borderBottom: "1px solid " + t.borderLight }}>
+                <td style={{ padding: "6px", color: t.text, fontWeight: 500 }}>{sec.name}</td>
+                <td style={{ padding: "6px", textAlign: "right" }}>
+                  <input type="number" value={sec.words || ""} onChange={e => updateSection(si, "words", e.target.value)} placeholder="0" style={{ width: 50, padding: "2px 4px", borderRadius: 4, border: "1px solid " + t.borderInput, fontSize: 12, textAlign: "right", background: t.bgInput, color: t.text, fontFamily: "inherit" }} />
+                </td>
+                <td style={{ padding: "6px", textAlign: "center" }}>
+                  <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>
+                    {[0, 1, 2].map(di => <Check key={di} checked={sec.d1[di]} onClick={() => updateSection(si, "d1-" + di)} color={cat.color} />)}
+                  </div>
+                </td>
+                <td style={{ padding: "6px", textAlign: "center" }}><Check checked={sec.d2} onClick={() => updateSection(si, "d2")} color="#D4883A" /></td>
+                <td style={{ padding: "6px", textAlign: "center" }}><Check checked={sec.final} onClick={() => updateSection(si, "final")} color="#2A7A3A" /></td>
+                <td style={{ padding: "6px" }}><button onClick={() => removeSection(si)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 12, padding: 0 }}>✕</button></td>
+              </tr>
+            ))}</tbody>
+            <tfoot><tr>
+              <td style={{ padding: "6px", fontWeight: 700, color: t.text }}>Total</td>
+              <td style={{ padding: "6px", textAlign: "right", fontWeight: 700, color: t.text }}>{totalWords.toLocaleString()}</td>
+              <td colSpan={4}></td>
+            </tr></tfoot>
+          </table>
+          <button onClick={addSection} style={{ marginTop: 6, background: "none", border: "1px dashed " + t.borderBtn, borderRadius: 6, padding: "4px 10px", fontSize: 11, color: t.textTer, cursor: "pointer", fontWeight: 600 }}>+ Add section</button>
+        </div>
+      )}
+      {task.notes && <div style={{ fontSize: 12, color: t.textTer, marginTop: 8, lineHeight: 1.4 }}>{task.notes}</div>}
+      {task.deadline && <div style={{ marginTop: 6 }}><DeadlineBadge dateStr={task.deadline} label="Deadline" submitted={false} time={task.deadlineTime} /></div>}
+      {!task.deadline && needsReminder(task) && <div style={{ marginTop: 6 }}><span style={{ fontSize: 11, color: "#D4883A", fontWeight: 600 }}>⏰ No deadline — check on this</span></div>}
     </div>
   );
 }
@@ -747,6 +931,14 @@ function AcademicTracker() {
       { id: "seed007", title: "Museum & Society Review: ICH Protection in Chinese Museums", url: "", category: "review", deadline: "2026-09-14", deadlineTime: "", interviewDate: "", notificationDate: "", conferenceDate: "", notes: "Intangible Cultural Heritage Protection in the Context of Chinese Museums: Engagement with Digital Media", status: "pending", createdAt: "2026-07-22" },
       { id: "seed008", title: "Teaching Fellow in Heritage \u2014 Edinburgh", url: "https://www.jobs.ac.uk/categories/university-of-edinburgh-jobs/1", category: "job", deadline: "2026-08-14", deadlineTime: "", interviewDate: "", notificationDate: "", conferenceDate: "", notes: "Archaeology Dept, School of History, Classics & Archaeology. Full-time, 12-month post from Jan 2027. Grade 7 \u00A341,064\u2013\u00A348,822. Marine/coastal heritage focus.", status: "notapplied", createdAt: "2026-07-28" },
       { id: "seed009", title: "King\u2019s Parliamentary Research Internship", url: "", category: "job", deadline: "2026-08-16", deadlineTime: "", interviewDate: "", notificationDate: "", conferenceDate: "", notes: "Part-time, paid. Matched with House of Lords member. Open to all research disciplines. Apply via King\u2019s Careers link in bio.", status: "pending", createdAt: "2026-07-28" },
+      { id: "seed010", title: "Digital Mediation in Blockbuster Exhibitions", url: "", category: "paper", deadline: "", deadlineTime: "", interviewDate: "", notificationDate: "", conferenceDate: "", notes: "", status: "pending", createdAt: "2026-07-21", paperTarget: "Humanities & Social Sciences Communications", paperPhases: [true, true, true], paperSections: [
+        { id: "intro", name: "Introduction", words: 1200, d1: [true, true, false], d2: false, final: false },
+        { id: "case", name: "Case Study", words: 1500, d1: [true, false, false], d2: false, final: false },
+        { id: "framework", name: "Framework", words: 800, d1: [true, false, false], d2: false, final: false },
+        { id: "discussion", name: "Discussion", words: 750, d1: [true, false, false], d2: false, final: false },
+        { id: "conclusion", name: "Conclusion", words: 0, d1: [false, false, false], d2: false, final: false },
+        { id: "ref", name: "Ref & Format", words: 0, d1: [false, false, false], d2: false, final: false },
+      ]},
     ];
     (async () => {
       let existing = [];
@@ -849,6 +1041,7 @@ function AcademicTracker() {
     setRecentlyDeleted(prev => prev.filter(d => d.id !== id));
   };
   const changeStatus = (id, s) => saveTasks(tasks.map(t => t.id === id ? { ...t, status: s } : t));
+  const updatePaper = (id, updates) => saveTasks(tasks.map(t => t.id === id ? { ...t, ...updates } : t));
   const changeMonth = (dir) => { const d = new Date(calDate); d.setMonth(d.getMonth() + dir); setCalDate(d); setSelectedDate(null); };
 
   // Trip handlers
@@ -885,6 +1078,43 @@ function AcademicTracker() {
   const activeTasks = tasks.filter(t => !closedStatuses.has(t.status));
   const urgentCount = activeTasks.filter(t => { const d = daysBetween(t.deadline); return d !== null && d >= 0 && d <= 3; }).length;
 
+  const exportAllICS = () => {
+    const withDeadlines = tasks.filter(tk => tk.deadline && !closedStatuses.has(tk.status));
+    if (withDeadlines.length === 0) return;
+    const now = new Date();
+    const stamp = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0") + "T" + String(now.getHours()).padStart(2, "0") + String(now.getMinutes()).padStart(2, "0") + String(now.getSeconds()).padStart(2, "0");
+    const esc = (s) => (s || "").replace(/[\\;,\n]/g, (m) => m === "\n" ? "\\n" : "\\" + m);
+    const events = withDeadlines.map(task => {
+      const cat = CATEGORIES.find(c => c.id === task.category);
+      const catLabel = cat ? cat.label : "Task";
+      const d = task.deadline.replace(/-/g, "");
+      let dtStart, dtEnd;
+      if (task.deadlineTime) {
+        const tp = task.deadlineTime.replace(/[^0-9:]/g, "").split(":");
+        const hh = (tp[0] || "00").padStart(2, "0"); const mm = (tp[1] || "00").padStart(2, "0");
+        dtStart = d + "T" + hh + mm + "00";
+        dtEnd = d + "T" + String(Math.min(23, parseInt(hh) + 1)).padStart(2, "0") + mm + "00";
+      } else {
+        const next = new Date(task.deadline + "T00:00:00"); next.setDate(next.getDate() + 1);
+        dtStart = d; dtEnd = localDateStr(next).replace(/-/g, "");
+      }
+      const isAllDay = !task.deadlineTime;
+      return ["BEGIN:VEVENT", "UID:" + task.id + "@academic-tracker", "DTSTAMP:" + stamp,
+        isAllDay ? "DTSTART;VALUE=DATE:" + dtStart : "DTSTART:" + dtStart,
+        isAllDay ? "DTEND;VALUE=DATE:" + dtEnd : "DTEND:" + dtEnd,
+        "SUMMARY:" + esc("[" + catLabel + "] " + task.title),
+        "DESCRIPTION:" + esc((task.notes || "") + (task.url ? "\\n" + task.url : "")),
+        "BEGIN:VALARM", "TRIGGER:-P1D", "ACTION:DISPLAY", "DESCRIPTION:Due tomorrow: " + esc(task.title), "END:VALARM",
+        "END:VEVENT"].join("\r\n");
+    });
+    const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AcademicTracker//EN", ...events, "END:VCALENDAR"].join("\r\n");
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "academic_deadlines.ics";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (!loaded) return <div style={{ fontFamily: "'Inter',system-ui,sans-serif", padding: 40, textAlign: "center", color: t.textTer, background: t.bgPage, minHeight: "100vh" }}>Loading...</div>;
 
   return (
@@ -903,6 +1133,9 @@ function AcademicTracker() {
             <a href={SHEET_URL} target="_blank" rel="noopener noreferrer" title="Open Google Sheet" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#2A7A3A", fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 14 }}>📊</span> Sheet
             </a>
+            <button onClick={exportAllICS} title="Export all deadlines to Apple Calendar" style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "#8B5CF6", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 14 }}>📅</span> .ics
+            </button>
           </div>
         </div>
         {syncMsg && <div style={{ fontSize: 11, color: syncMsg.includes("✓") ? "#2A7A3A" : syncMsg.includes("...") ? t.textTer : "#B04040", fontWeight: 600, textAlign: "right", marginTop: 2 }}>{syncMsg}</div>}
@@ -1028,7 +1261,10 @@ function AcademicTracker() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {sorted.map(task => <TaskCard key={task.id} task={task} onStatusChange={changeStatus} onDelete={deleteTask} onEdit={handleEdit} />)}
+              {sorted.map(task => task.category === "paper"
+                ? <PaperCard key={task.id} task={task} onEdit={handleEdit} onDelete={deleteTask} onUpdatePaper={updatePaper} />
+                : <TaskCard key={task.id} task={task} onStatusChange={changeStatus} onDelete={deleteTask} onEdit={handleEdit} />
+              )}
             </div>
           )}
         </div>

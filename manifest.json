@@ -1,7 +1,7 @@
 {
   "name": "Academic Tracker",
   "short_name": "Tracker",
-  "description": "Track job applications, CFPs, paper reviews, trips & daily habits",
+  "description": "Track job applications, CFPs, paper reviews, papers in progress, trips & daily habits",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f9fafb",
