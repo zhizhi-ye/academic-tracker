@@ -1396,6 +1396,9 @@ function AcademicTracker() {
     const aClosed = closedStatuses.has(a.status) ? 1 : 0;
     const bClosed = closedStatuses.has(b.status) ? 1 : 0;
     if (aClosed !== bClosed) return aClosed - bClosed;
+    const aHas = a.deadline ? 0 : 1;
+    const bHas = b.deadline ? 0 : 1;
+    if (aHas !== bHas) return aHas - bHas;
     if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
     return 0;
   });
