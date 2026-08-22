@@ -20,6 +20,9 @@
   @media (prefers-color-scheme: light) { html, body { background: #f9fafb; color: #1a1a2e; } }
   button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   input[type="date"] { -webkit-appearance: none; }
+  input[type="number"] { -moz-appearance: textfield; }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   ::-webkit-scrollbar { width: 0; height: 0; }
 </style>
 </head>
@@ -424,11 +427,12 @@ function PaperCard({ task, onEdit, onDelete, onUpdatePaper, onStatusChange }) {
   const addSection = () => { const name = prompt("Section name:"); if (!name || !name.trim()) return; const ns = [...sections, { id: generateId(), name: name.trim(), target: 0, words: 0, d1: [false, false, false], d2: false, final: false }]; onUpdatePaper(task.id, { paperSections: ns }); };
   const removeSection = (secIdx) => { onUpdatePaper(task.id, { paperSections: sections.filter((_, i) => i !== secIdx) }); };
   const Check = ({ checked, onClick, color }) => (
-    <button onClick={onClick} style={{ width: 20, height: 20, borderRadius: 4, border: "1.5px solid " + (checked ? color : t.borderInput), background: checked ? color : "transparent", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff", lineHeight: 1, flexShrink: 0, WebkitTapHighlightColor: "transparent" }}>
-      {checked ? "■" : ""}
+    <button onClick={onClick} style={{ width: 16, height: 16, borderRadius: 3, border: checked ? "none" : "1.5px solid " + t.borderInput, background: checked ? color : "transparent", cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, WebkitTapHighlightColor: "transparent", transition: "background 0.15s" }}>
+      {checked && <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5.5L4 7.5L8 3" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
     </button>
   );
   const phaseHasContent = (ph) => ph.type === "text" ? !!phases[ph.id] : !!phases[ph.id];
+  const overallPct = totalTarget > 0 ? Math.min(100, Math.round(totalWords / totalTarget * 100)) : null;
   return (
     <div style={{ background: closed ? t.bgCardClosed : t.bgCard, borderRadius: 12, padding: "16px 18px", border: "1px solid " + (closed ? t.borderLight : t.border), opacity: closed ? 0.6 : 1, boxShadow: closed ? "none" : "0 2px 8px rgba(0,0,0,0.04)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
@@ -452,103 +456,97 @@ function PaperCard({ task, onEdit, onDelete, onUpdatePaper, onStatusChange }) {
           </div>)}
         </div>
       </div>
-      {/* Phase indicators */}
-      <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+
+      {/* Phase chips */}
+      <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
         {PAPER_PHASES.map(ph => {
           const filled = phaseHasContent(ph);
-          if (ph.type === "text") {
-            return (
-              <button key={ph.id} onClick={() => setEditingPhase(editingPhase === ph.id ? null : ph.id)} style={{ padding: "4px 10px", borderRadius: 6, border: "1.5px solid " + (filled ? cat.color : t.borderBtn), background: filled ? cat.color + "18" : "transparent", color: filled ? cat.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                {filled ? "■" : "□"} {ph.label}
-              </button>
-            );
-          }
+          const handler = ph.type === "text"
+            ? () => setEditingPhase(editingPhase === ph.id ? null : ph.id)
+            : () => updatePhase(ph.id, !phases[ph.id]);
           return (
-            <button key={ph.id} onClick={() => updatePhase(ph.id, !phases[ph.id])} style={{ padding: "4px 10px", borderRadius: 6, border: "1.5px solid " + (filled ? cat.color : t.borderBtn), background: filled ? cat.color + "18" : "transparent", color: filled ? cat.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-              {filled ? "■" : "□"} {ph.label}
+            <button key={ph.id} onClick={handler} style={{ padding: "3px 10px", borderRadius: 20, border: "1.5px solid " + (filled ? cat.color : t.borderBtn), background: filled ? cat.color : "transparent", color: filled ? "#fff" : t.textTer, fontWeight: 600, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, letterSpacing: "0.02em", transition: "all 0.15s" }}>
+              {ph.label}
             </button>
           );
         })}
-        <span style={{ fontSize: 12, color: t.textTer, marginLeft: 4 }}>Writing: {totalChecks}/{maxChecks} · {totalWords.toLocaleString()}{totalTarget > 0 ? "/" + totalTarget.toLocaleString() : ""}w</span>
       </div>
-      {/* Expandable text field for RQ / Method */}
+
+      {/* RQ / Method text field */}
       {editingPhase && PAPER_PHASES.find(p => p.id === editingPhase && p.type === "text") && (
         <div style={{ marginTop: 8 }}>
-          <label style={{ fontSize: 10, fontWeight: 700, color: t.textTer, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            {PAPER_PHASES.find(p => p.id === editingPhase).label}
-          </label>
-          <textarea value={phases[editingPhase] || ""} onChange={e => updatePhase(editingPhase, e.target.value)} placeholder={"Enter your " + PAPER_PHASES.find(p => p.id === editingPhase).label + "..."} rows={2} style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 6, border: "1px solid " + t.borderInput, fontSize: 12, fontFamily: "inherit", background: t.bgInput, color: t.text, resize: "vertical", outline: "none", boxSizing: "border-box", lineHeight: 1.5 }} />
+          <textarea value={phases[editingPhase] || ""} onChange={e => updatePhase(editingPhase, e.target.value)} placeholder={PAPER_PHASES.find(p => p.id === editingPhase).label + "..."} rows={2} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.borderLight, fontSize: 12, fontFamily: "inherit", background: t.bgEmpty, color: t.text, resize: "vertical", outline: "none", boxSizing: "border-box", lineHeight: 1.5 }} />
         </div>
       )}
-      <button onClick={() => setExpanded(!expanded)} style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer", color: t.textTer, fontSize: 11, fontWeight: 600, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
-        {expanded ? "▾ Hide writing progress" : "▸ Show writing progress"}
+
+      {/* Progress bar + summary */}
+      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1, height: 4, borderRadius: 2, background: t.borderLight, overflow: "hidden" }}>
+          <div style={{ height: "100%", borderRadius: 2, background: overallPct !== null && overallPct >= 100 ? "#2A7A3A" : cat.color, width: (overallPct !== null ? overallPct : (totalChecks / maxChecks * 100)) + "%", transition: "width 0.3s" }} />
+        </div>
+        <span style={{ fontSize: 10, color: t.textTer, fontWeight: 600, whiteSpace: "nowrap" }}>{totalWords.toLocaleString()}{totalTarget > 0 ? "/" + totalTarget.toLocaleString() : ""}w · {totalChecks}/{maxChecks}</span>
+      </div>
+
+      {/* Expand toggle */}
+      <button onClick={() => setExpanded(!expanded)} style={{ marginTop: 8, background: "none", border: "none", cursor: "pointer", color: t.textQuad, fontSize: 10, fontWeight: 600, padding: 0, letterSpacing: "0.03em" }}>
+        {expanded ? "▾ HIDE DETAILS" : "▸ WRITING PROGRESS"}
       </button>
+
       {expanded && (
-        <div style={{ marginTop: 10, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed", minWidth: 420 }}>
-            <colgroup>
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "4%" }} />
-            </colgroup>
-            <thead><tr style={{ borderBottom: "2px solid " + t.borderLight }}>
-              <th style={{ textAlign: "left", padding: "6px", color: t.textTer, fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Section</th>
-              <th style={{ textAlign: "center", padding: "6px", color: t.textTer, fontWeight: 700, fontSize: 10, textTransform: "uppercase" }}>Target</th>
-              <th style={{ textAlign: "center", padding: "6px", color: t.textTer, fontWeight: 700, fontSize: 10, textTransform: "uppercase" }}>Words</th>
-              <th style={{ textAlign: "center", padding: "6px", color: t.textTer, fontWeight: 700, fontSize: 10, textTransform: "uppercase" }}>1st Draft</th>
-              <th style={{ textAlign: "center", padding: "6px", color: t.textTer, fontWeight: 700, fontSize: 10, textTransform: "uppercase" }}>2nd</th>
-              <th style={{ textAlign: "center", padding: "6px", color: t.textTer, fontWeight: 700, fontSize: 10, textTransform: "uppercase" }}>Final</th>
-              <th></th>
-            </tr></thead>
-            <tbody>{sections.map((sec, si) => {
-              const noWords = sec.words === -1 || sec.target === -1 || sec.id === "ref";
-              const pct = !noWords && sec.target > 0 ? Math.min(100, Math.round((sec.words || 0) / sec.target * 100)) : null;
-              return (
-              <tr key={sec.id} style={{ borderBottom: "1px solid " + t.borderLight }}>
-                <td style={{ padding: "8px 6px", color: t.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sec.name}</td>
-                <td style={{ padding: "8px 4px", textAlign: "center" }}>
-                  {noWords ? <span style={{ color: t.textFaint }}>—</span> : (
-                    <input type="number" value={sec.target || ""} onChange={e => updateSection(si, "target", e.target.value)} placeholder="—" style={{ width: "100%", maxWidth: 52, padding: "3px 4px", borderRadius: 4, border: "1px solid " + t.borderInput, fontSize: 11, textAlign: "center", background: t.bgInput, color: t.textTer, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  )}
-                </td>
-                <td style={{ padding: "8px 4px", textAlign: "center" }}>
-                  {noWords ? <span style={{ color: t.textFaint }}>—</span> : (
-                    <div>
-                      <input type="number" value={sec.words || ""} onChange={e => updateSection(si, "words", e.target.value)} placeholder="0" style={{ width: "100%", maxWidth: 52, padding: "3px 4px", borderRadius: 4, border: "1px solid " + t.borderInput, fontSize: 11, textAlign: "center", background: t.bgInput, color: t.text, fontWeight: 600, fontFamily: "inherit", boxSizing: "border-box" }} />
-                      {pct !== null && <div style={{ fontSize: 9, color: pct >= 100 ? "#2A7A3A" : pct >= 60 ? "#D4883A" : t.textQuad, fontWeight: 600, marginTop: 2 }}>{pct}%</div>}
-                    </div>
-                  )}
-                </td>
-                <td style={{ padding: "8px 4px", textAlign: "center" }}>
-                  <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
-                    {[0, 1, 2].map(di => <Check key={di} checked={sec.d1[di]} onClick={() => updateSection(si, "d1-" + di)} color={cat.color} />)}
-                  </div>
-                </td>
-                <td style={{ padding: "8px 4px", textAlign: "center" }}><Check checked={sec.d2} onClick={() => updateSection(si, "d2")} color="#D4883A" /></td>
-                <td style={{ padding: "8px 4px", textAlign: "center" }}><Check checked={sec.final} onClick={() => updateSection(si, "final")} color="#2A7A3A" /></td>
-                <td style={{ padding: "8px 2px", textAlign: "center" }}><button onClick={() => removeSection(si)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 11, padding: 0, lineHeight: 1 }}>✕</button></td>
-              </tr>
-              );
-            })}</tbody>
-            <tfoot><tr style={{ borderTop: "2px solid " + t.borderLight }}>
-              <td style={{ padding: "8px 6px", fontWeight: 700, color: t.text }}>Total</td>
-              <td style={{ padding: "8px 4px", textAlign: "center", fontWeight: 600, color: t.textTer, fontSize: 11 }}>{totalTarget > 0 ? totalTarget.toLocaleString() : "—"}</td>
-              <td style={{ padding: "8px 4px", textAlign: "center", fontWeight: 700, color: t.text, fontSize: 12 }}>{totalWords.toLocaleString()}</td>
-              <td colSpan={4}></td>
-            </tr></tfoot>
-          </table>
-          <button onClick={addSection} style={{ marginTop: 8, background: "none", border: "1px dashed " + t.borderBtn, borderRadius: 6, padding: "5px 12px", fontSize: 11, color: t.textTer, cursor: "pointer", fontWeight: 600 }}>+ Add section</button>
+        <div style={{ marginTop: 8 }}>
+          {sections.map((sec, si) => {
+            const noWords = sec.words === -1 || sec.target === -1 || sec.id === "ref";
+            const pct = !noWords && sec.target > 0 ? Math.min(100, Math.round((sec.words || 0) / sec.target * 100)) : null;
+            return (
+              <div key={sec.id} style={{ display: "flex", alignItems: "center", gap: 0, padding: "7px 0", borderBottom: "1px solid " + t.borderLight }}>
+                {/* Section name */}
+                <div style={{ width: "22%", minWidth: 70, fontSize: 12, color: t.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 6 }}>{sec.name}</div>
+                {/* Target + Words */}
+                <div style={{ width: "22%", display: "flex", alignItems: "center", gap: 3, justifyContent: "center" }}>
+                  {noWords ? <span style={{ color: t.textFaint, fontSize: 10 }}>—</span> : (<>
+                    <input type="number" value={sec.words || ""} onChange={e => updateSection(si, "words", e.target.value)} placeholder="0" style={{ width: 36, padding: "2px 3px", borderRadius: 3, border: "none", background: t.bgEmpty, fontSize: 10, textAlign: "center", color: t.text, fontWeight: 600, fontFamily: "inherit", outline: "none" }} />
+                    <span style={{ color: t.textFaint, fontSize: 9 }}>/</span>
+                    <input type="number" value={sec.target || ""} onChange={e => updateSection(si, "target", e.target.value)} placeholder="—" style={{ width: 36, padding: "2px 3px", borderRadius: 3, border: "none", background: t.bgEmpty, fontSize: 10, textAlign: "center", color: t.textQuad, fontFamily: "inherit", outline: "none" }} />
+                    {pct !== null && <span style={{ fontSize: 9, color: pct >= 100 ? "#2A7A3A" : pct >= 60 ? cat.color : t.textFaint, fontWeight: 600, minWidth: 22 }}>{pct}%</span>}
+                  </>)}
+                </div>
+                {/* Draft checkboxes */}
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 3, justifyContent: "center" }}>
+                  {[0, 1, 2].map(di => <Check key={di} checked={sec.d1[di]} onClick={() => updateSection(si, "d1-" + di)} color={cat.color} />)}
+                  <span style={{ width: 6 }} />
+                  <Check checked={sec.d2} onClick={() => updateSection(si, "d2")} color="#D4883A" />
+                  <span style={{ width: 4 }} />
+                  <Check checked={sec.final} onClick={() => updateSection(si, "final")} color="#2A7A3A" />
+                </div>
+                {/* Remove */}
+                <button onClick={() => removeSection(si)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 10, padding: "0 2px", lineHeight: 1, opacity: 0.5 }}>✕</button>
+              </div>
+            );
+          })}
+          {/* Column labels - subtle, below content */}
+          <div style={{ display: "flex", alignItems: "center", gap: 0, padding: "6px 0 2px", opacity: 0.5 }}>
+            <div style={{ width: "22%", minWidth: 70 }} />
+            <div style={{ width: "22%", fontSize: 8, textAlign: "center", color: t.textQuad, fontWeight: 600, letterSpacing: "0.05em" }}>WORDS / TARGET</div>
+            <div style={{ flex: 1, display: "flex", justifyContent: "center", gap: 2 }}>
+              <span style={{ fontSize: 8, color: t.textQuad, fontWeight: 600, letterSpacing: "0.05em" }}>1st · 1st · 1st</span>
+              <span style={{ width: 6 }} />
+              <span style={{ fontSize: 8, color: t.textQuad, fontWeight: 600 }}>2nd</span>
+              <span style={{ width: 4 }} />
+              <span style={{ fontSize: 8, color: t.textQuad, fontWeight: 600 }}>FIN</span>
+            </div>
+            <div style={{ width: 14 }} />
+          </div>
+          <button onClick={addSection} style={{ marginTop: 6, background: "none", border: "none", padding: 0, fontSize: 11, color: t.textQuad, cursor: "pointer", fontWeight: 500 }}>+ add section</button>
         </div>
       )}
+
       {task.notes && <div style={{ fontSize: 12, color: t.textTer, marginTop: 8, lineHeight: 1.4 }}>{task.notes}</div>}
       {task.deadline && <div style={{ marginTop: 6 }}><DeadlineBadge dateStr={task.deadline} label="Deadline" submitted={task.status === "submitted" || task.status === "accepted"} time={task.deadlineTime} /></div>}
       {!task.deadline && needsReminder(task) && <div style={{ marginTop: 6 }}><span style={{ fontSize: 11, color: "#D4883A", fontWeight: 600 }}>⏰ No deadline — check on this</span></div>}
+
+      {/* Status buttons - compact inline */}
       {!closed && (
-        <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
           {(task.status === "pending") && <StatusBtn label="Writing" color="#C62828" onClick={() => onStatusChange(task.id, "writing")} />}
           {(task.status === "writing") && <StatusBtn label="Finished" color="#3949AB" onClick={() => onStatusChange(task.id, "finished")} />}
           {(task.status === "finished") && <StatusBtn label="Submitted" color="#2A5DB0" onClick={() => onStatusChange(task.id, "submitted")} />}
@@ -560,7 +558,7 @@ function PaperCard({ task, onEdit, onDelete, onUpdatePaper, onStatusChange }) {
         </div>
       )}
       {closed && (
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 8 }}>
           <button onClick={() => onStatusChange(task.id, "writing")} style={{ fontSize: 11, color: t.textTer, background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>{"\u21A9"} Reopen</button>
         </div>
       )}
