@@ -330,7 +330,7 @@ function TaskCard({ task, onStatusChange, onDelete, onEdit }) {
   const closed = task.status === "noreply" || task.status === "success" || task.status === "reviewed" || task.status === "notapplied" || task.status === "nointerview";
   const isJob = task.category === "job";
   const isReview = task.category === "review";
-  const submitted = !isReview && task.status !== "pending";
+  const submitted = !isReview && (task.status === "applied" || task.status === "interview" || task.status === "notification" || task.status === "success" || task.status === "nointerview");
   const secondLabel = isJob ? "Interview" : "Notification";
   const secondVal = isReview ? null : (isJob ? task.interviewDate : task.notificationDate);
   return (
