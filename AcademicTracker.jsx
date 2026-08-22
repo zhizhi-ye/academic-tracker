@@ -1,46 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="color-scheme" content="light dark" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Tracker" />
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f9fafb" />
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12121f" />
-<link rel="manifest" href="manifest.json" />
-<link rel="apple-touch-icon" href="icon-192.png" />
-<title>Academic Tracker</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; }
-  html { height: 100%; -webkit-text-size-adjust: 100%; }
-  body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
-  @media (prefers-color-scheme: dark) { html, body { background: #12121f; color: #e8e8f0; } }
-  @media (prefers-color-scheme: light) { html, body { background: #f9fafb; color: #1a1a2e; } }
-  button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
-  input[type="date"] { -webkit-appearance: none; }
-  ::-webkit-scrollbar { width: 0; height: 0; }
-</style>
-</head>
-<body>
-<div id="root"></div>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script>
-if (!window.storage) {
-  window.storage = {
-    async get(key) { const val = localStorage.getItem("at:" + key); if (val === null) return null; return { key: key, value: val }; },
-    async set(key, value) { localStorage.setItem("at:" + key, value); return { key: key, value: value }; },
-    async delete(key) { localStorage.removeItem("at:" + key); return { key: key, deleted: true }; },
-    async list(prefix) { const keys = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("at:")) { const realKey = k.slice(3); if (!prefix || realKey.startsWith(prefix)) keys.push(realKey); } } return { keys: keys }; }
-  };
-}
-</script>
-<script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function() {}); }</script>
-<script type="text/babel" data-type="module">
-const { useState, useEffect, useCallback, useRef } = React;
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 
 const LIGHT = {
@@ -1607,8 +1565,5 @@ function AcademicTracker() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(AcademicTracker));
-</script>
-</body>
-</html>
+
+export default AcademicTracker;
