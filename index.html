@@ -1486,20 +1486,48 @@ function AcademicTracker() {
         const resp = await fetch(url);
         return await resp.text();
       };
-      const [tasksResp, tripsResp, habitsResp, logResp] = await Promise.all([
+      const [tasksResp, tripsResp, habitsResp, logResp, schedResp, readResp] = await Promise.all([
         fetchText(gvizUrl("Tasks")),
         fetchText(gvizUrl("Trips")).catch(() => ""),
         fetchText(gvizUrl("Habits")).catch(() => ""),
         fetchText(gvizUrl("Habit Log")).catch(() => ""),
+        fetchText(gvizUrl("Schedule")).catch(() => ""),
+        fetchText(gvizUrl("Readings")).catch(() => ""),
       ]);
-      const tasks = parseGviz(tasksResp) || [];
+      const rawTasks = parseGviz(tasksResp) || [];
       const trips = parseGviz(tripsResp) || [];
       const habits = parseGviz(habitsResp) || [];
       const logRows = parseGviz(logResp) || [];
+      const schedRows = parseGviz(schedResp) || [];
+      const rawReadings = parseGviz(readResp) || [];
+
+      // Parse JSON fields in tasks
+      const tasks = rawTasks.map(t => {
+        try { if (t.paperPhases && typeof t.paperPhases === "string") t.paperPhases = JSON.parse(t.paperPhases); } catch(e) { t.paperPhases = null; }
+        try { if (t.paperSections && typeof t.paperSections === "string") t.paperSections = JSON.parse(t.paperSections); } catch(e) { t.paperSections = null; }
+        return t;
+      });
+
       const habitLog = {};
       logRows.forEach(r => { if (r.key && !r.key.startsWith("undefined")) habitLog[r.key] = true; });
 
-      // Validate: tasks must have id and title, habits must have id and name
+      // Parse schedule
+      const pulledSchedule = {};
+      schedRows.forEach(r => {
+        if (r.date && r.items) {
+          try { pulledSchedule[r.date] = JSON.parse(r.items); } catch(e) { pulledSchedule[r.date] = []; }
+        }
+      });
+
+      // Parse readings
+      const pulledReadings = rawReadings.map(r => {
+        if (r.tags && typeof r.tags === "string") r.tags = r.tags.split(", ").filter(Boolean);
+        else if (!Array.isArray(r.tags)) r.tags = [];
+        r.read = r.read === "✓" || r.read === "true" || r.read === true;
+        return r;
+      });
+
+      // Validate: tasks must have id and title
       const validTasks = tasks.filter(t => t.id && t.title);
       const validHabits = habits.filter(h => h.id && h.name);
 
@@ -1508,6 +1536,8 @@ function AcademicTracker() {
         if (trips.length > 0) await saveTrips(trips.filter(t => t.id && t.title));
         if (validHabits.length > 0) await saveHabits(validHabits);
         if (Object.keys(habitLog).length > 0) await saveHabitLog(habitLog);
+        if (Object.keys(pulledSchedule).length > 0) await saveSchedule(pulledSchedule);
+        if (pulledReadings.length > 0) await saveReadings(pulledReadings);
         setSyncMsg("Pulled " + validTasks.length + " tasks ✓");
       } else { setSyncMsg("Pull: no valid data"); }
     } catch (e) { setSyncMsg("Pull: " + e.message); }
