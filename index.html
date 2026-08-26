@@ -1337,7 +1337,7 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
   return (
     <div style={{ background: t.bgCard, borderRadius: 12, padding: 18, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
       {/* Header with nav and view toggle */}
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={() => {
             if (viewMode === "week") setWeekOffset(o => o - 1);
@@ -1349,13 +1349,9 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
           <button onClick={() => {
             if (viewMode === "week") setWeekOffset(o => o + 1);
             else changeMonth(1);
-          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec }}>▸</button>
-          {((viewMode === "week" && weekOffset !== 0) || (viewMode === "month" && !isCurrentMonth)) && (
-            <button onClick={() => {
-              if (viewMode === "week") setWeekOffset(0);
-              else setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1));
-            }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, fontSize: 14, color: "#E05A7A" }}>○</button>
-          )}
+          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec, position: "relative" }}>▸{((viewMode === "week" && weekOffset !== 0) || (viewMode === "month" && !isCurrentMonth)) && (
+              <span onClick={(e) => { e.stopPropagation(); if (viewMode === "week") setWeekOffset(0); else setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1)); }} style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7, borderRadius: "50%", background: "#E05A7A", cursor: "pointer" }} />
+          )}</button>
         </div>
         <div style={{ display: "flex", gap: 2, background: t.bgEmpty, borderRadius: 8, padding: 2 }}>
           {["week", "month"].map(mode => (
