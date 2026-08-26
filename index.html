@@ -1349,11 +1349,13 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
           <button onClick={() => {
             if (viewMode === "week") setWeekOffset(o => o + 1);
             else changeMonth(1);
-          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec, position: "relative" }}>▸{((viewMode === "week" && weekOffset !== 0) || (viewMode === "month" && !isCurrentMonth)) && (
-              <span onClick={(e) => { e.stopPropagation(); if (viewMode === "week") setWeekOffset(0); else setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1)); }} style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7, borderRadius: "50%", background: "#E05A7A", cursor: "pointer" }} />
-          )}</button>
+          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec }}>▸</button>
         </div>
-        <div style={{ display: "flex", gap: 2, background: t.bgEmpty, borderRadius: 8, padding: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {((viewMode === "week" && weekOffset !== 0) || (viewMode === "month" && !isCurrentMonth)) && (
+            <button onClick={() => { if (viewMode === "week") setWeekOffset(0); else setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1)); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid " + t.borderBtn, background: t.bgCard, cursor: "pointer", fontSize: 11, fontWeight: 600, color: t.accent }}>Today</button>
+          )}
+          <div style={{ display: "flex", gap: 2, background: t.bgEmpty, borderRadius: 8, padding: 2 }}>
           {["week", "month"].map(mode => (
             <button key={mode} onClick={() => setViewMode(mode)} style={{
               padding: "5px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
@@ -1361,6 +1363,7 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
               color: viewMode === mode ? t.accentText : t.textTer,
             }}>{mode === "week" ? "Week" : "Month"}</button>
           ))}
+        </div>
         </div>
       </div>
       {viewMode === "week" ? (
