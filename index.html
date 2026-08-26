@@ -43,6 +43,7 @@ if (!window.storage) {
 </script>
 <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function() {}); }</script>
 <script type="text/babel" data-type="module">
+const { useState, useEffect, useCallback, useRef } = React;
 
 
 
