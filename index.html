@@ -43,7 +43,7 @@ if (!window.storage) {
 </script>
 <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function() {}); }</script>
 <script type="text/babel" data-type="module">
-const { useState, useEffect, useCallback, useRef } = React;
+
 
 
 const LIGHT = {
@@ -333,7 +333,43 @@ function TaskForm({ onAdd, onClose, editTask, onSaveEdit }) {
   );
 }
 
-function TaskCard({ task, onStatusChange, onDelete, onEdit, scheduledToday }) {
+function getScheduledDates(schedule, taskId) {
+  const dates = [];
+  Object.entries(schedule || {}).forEach(([dateStr, items]) => {
+    if (items.some(a => a.taskId === taskId)) dates.push(dateStr);
+  });
+  dates.sort();
+  return dates;
+}
+
+function ScheduledDatesBadges({ dates }) {
+  const t = React.useContext(ThemeCtx);
+  if (!dates || dates.length === 0) return null;
+  const todayStr = localDateStr(new Date());
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 10, color: t.textTer }}>📅</span>
+      {dates.map(ds => {
+        const d = new Date(ds + "T00:00:00");
+        const isToday = ds === todayStr;
+        const isPast = d < today;
+        return (
+          <span key={ds} style={{
+            fontSize: 9, fontWeight: 600, padding: "1px 5px", borderRadius: 3,
+            background: isToday ? t.accent + "18" : isPast ? t.bgEmpty : t.accent + "08",
+            color: isToday ? t.accent : isPast ? t.textFaint : t.textSec,
+            textDecoration: isPast ? "line-through" : "none",
+          }}>
+            {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function TaskCard({ task, onStatusChange, onDelete, onEdit, scheduledToday, schedule }) {
   const [confirming, setConfirming] = useState(false);
   const t = React.useContext(ThemeCtx);
   const cat = CATEGORIES.find(c => c.id === task.category) || CATEGORIES[0];
@@ -352,6 +388,7 @@ function TaskCard({ task, onStatusChange, onDelete, onEdit, scheduledToday }) {
             <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: cat.color, background: cat.color + "15", padding: "2px 8px", borderRadius: 4 }}>{cat.label}</span>
             <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: st.bg, color: st.fg }}>{st.label}</span>
             {scheduledToday && <span style={{ fontSize: 9, fontWeight: 700, color: t.accent, background: t.accent + "15", padding: "2px 6px", borderRadius: 3 }}>📌 TODAY</span>}
+            <ScheduledDatesBadges dates={getScheduledDates(schedule, task.id)} />
           </div>
           <div style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 4, lineHeight: 1.3 }}>
             {task.url ? <a href={task.url} target="_blank" rel="noopener noreferrer" style={{ color: t.text, textDecoration: "none", borderBottom: "1px dashed " + t.textQuad }}>{task.title} {"\u2197"}</a> : task.title}
@@ -405,7 +442,7 @@ function TaskCard({ task, onStatusChange, onDelete, onEdit, scheduledToday }) {
   );
 }
 
-function PaperCard({ task, onEdit, onDelete, onUpdatePaper, onStatusChange, scheduledToday }) {
+function PaperCard({ task, onEdit, onDelete, onUpdatePaper, onStatusChange, scheduledToday, schedule }) {
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [editingPhase, setEditingPhase] = useState(null);
@@ -453,6 +490,7 @@ function PaperCard({ task, onEdit, onDelete, onUpdatePaper, onStatusChange, sche
             <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: cat.color, background: cat.color + "15", padding: "2px 8px", borderRadius: 4 }}>📝 {cat.label}</span>
             <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: st.bg, color: st.fg }}>{st.label}</span>
             {scheduledToday && <span style={{ fontSize: 9, fontWeight: 700, color: t.accent, background: t.accent + "15", padding: "2px 6px", borderRadius: 3 }}>📌 TODAY</span>}
+            <ScheduledDatesBadges dates={getScheduledDates(schedule, task.id)} />
           </div>
           <div style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 2, lineHeight: 1.3 }}>
             {task.url ? <a href={task.url} target="_blank" rel="noopener noreferrer" style={{ color: t.text, textDecoration: "none", borderBottom: "1px dashed " + t.textQuad }}>{task.title} ↗</a> : task.title}
@@ -1195,74 +1233,148 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
   const t = React.useContext(ThemeCtx);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayStr = localDateStr(today);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [viewMode, setViewMode] = useState("week"); // "week" or "month"
+  const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
 
-  // Show current week (Mon–Sun)
-  const startOfWeek = new Date(today);
-  const dow = startOfWeek.getDay();
-  startOfWeek.setDate(startOfWeek.getDate() - (dow === 0 ? 6 : dow - 1));
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(startOfWeek);
-    d.setDate(startOfWeek.getDate() + i);
-    days.push(d);
-  }
-  const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // Compute days for week view
+  const getWeekDays = (offset) => {
+    const ref = new Date(today);
+    const dow = ref.getDay();
+    const mondayOffset = dow === 0 ? -6 : 1 - dow;
+    const startMs = ref.getTime() + (mondayOffset + offset * 7) * 864e5;
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      days.push(new Date(startMs + i * 864e5));
+    }
+    return days;
+  };
 
-  return (
-    <div style={{ background: t.bgCard, borderRadius: 12, padding: 18, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: t.text, margin: "0 0 14px" }}>
-        Weekly Planner
-      </h3>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-        {days.map((d, i) => {
-          const ds = localDateStr(d);
-          const isToday = ds === todayStr;
-          const isPast = d < today;
-          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-          const items = schedule[ds] || [];
+  // Compute days for month view
+  const getMonthDays = () => {
+    const y = monthDate.getFullYear();
+    const m = monthDate.getMonth();
+    const last = new Date(y, m + 1, 0);
+    const days = [];
+    for (let d = 1; d <= last.getDate(); d++) {
+      days.push(new Date(y, m, d));
+    }
+    return days;
+  };
 
+  const changeMonth = (delta) => {
+    setMonthDate(prev => {
+      const nd = new Date(prev);
+      nd.setMonth(nd.getMonth() + delta);
+      return nd;
+    });
+  };
+
+  const days = viewMode === "week" ? getWeekDays(weekOffset) : getMonthDays();
+  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const isCurrentMonth = monthDate.getFullYear() === today.getFullYear() && monthDate.getMonth() === today.getMonth();
+
+  // Header label
+  const headerLabel = viewMode === "week" ? (() => {
+    const s = days[0]; const e = days[6];
+    const fmt = (d) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    return fmt(s) + " – " + fmt(e) + (s.getFullYear() !== today.getFullYear() ? " " + s.getFullYear() : "");
+  })() : monthDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+
+  const renderDayCard = (d) => {
+    const ds = localDateStr(d);
+    const isToday = ds === todayStr;
+    const isPast = d < today;
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const items = schedule[ds] || [];
+    const dayName = dayLabels[d.getDay()];
+
+    return (
+      <div key={ds} style={{ background: isToday ? t.todayBg : isWeekend ? t.weekendEmpty + "40" : t.bgEmpty, borderRadius: 10, border: isToday ? "2px solid " + t.accent : "1px solid " + t.borderLight, padding: "10px 12px", opacity: isPast && !isToday ? 0.5 : 1, minHeight: viewMode === "month" ? 50 : 80 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: items.length > 0 ? 8 : 0 }}>
+          <div>
+            <span style={{ fontSize: 11, fontWeight: 700, color: isToday ? t.accent : t.textTer, textTransform: "uppercase", letterSpacing: "0.04em" }}>{dayName} </span>
+            <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 600, color: isToday ? t.accent : t.text }}>{d.getDate()}</span>
+            {viewMode === "month" && <span style={{ fontSize: 11, color: t.textQuad, marginLeft: 4 }}>{d.toLocaleDateString("en-GB", { month: "short" })}</span>}
+          </div>
+          <button onClick={() => onOpenAssign(ds)} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 5, padding: "2px 6px", fontSize: 11, color: t.textTer, cursor: "pointer", fontWeight: 600 }}>+</button>
+        </div>
+        {items.length === 0 && viewMode === "week" && (
+          <div style={{ fontSize: 11, color: t.textFaint, fontStyle: "italic", padding: "8px 0" }}>Nothing scheduled</div>
+        )}
+        {items.map((item, j) => {
+          const tk = tasks.find(tt => tt.id === item.taskId);
+          const rd = !tk && (readings || []).find(r => r.id === item.taskId);
+          if (!tk && !rd) return null;
+          const cat = tk ? CATEGORIES.find(c => c.id === tk.category) : null;
+          const color = cat ? cat.color : "#10B981";
+          const secName = tk && item.sectionId && tk.paperSections
+            ? (tk.paperSections.find(s => s.id === item.sectionId) || {}).name
+            : null;
+          const title = tk ? tk.title : rd.title;
           return (
-            <div key={ds} style={{ background: isToday ? t.todayBg : isWeekend ? t.weekendEmpty + "40" : t.bgEmpty, borderRadius: 10, border: isToday ? "2px solid " + t.accent : "1px solid " + t.borderLight, padding: "10px 12px", opacity: isPast && !isToday ? 0.5 : 1, minHeight: 80 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: isToday ? t.accent : t.textTer, textTransform: "uppercase", letterSpacing: "0.04em" }}>{dayLabels[i]} </span>
-                  <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 600, color: isToday ? t.accent : t.text }}>{d.getDate()}</span>
-                </div>
-                <button onClick={() => onOpenAssign(ds)} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 5, padding: "2px 6px", fontSize: 11, color: t.textTer, cursor: "pointer", fontWeight: 600 }}>+</button>
+            <div key={j} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "5px 6px", marginBottom: 4, borderRadius: 6, background: color + "10", borderLeft: "3px solid " + color }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {secName ? (
+                  <>
+                    <div style={{ fontSize: 10, color: t.textQuad, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
+                    <div style={{ fontSize: 12, color: t.text, fontWeight: 600 }}>{secName}</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, color: t.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
+                )}
               </div>
-              {items.length === 0 && (
-                <div style={{ fontSize: 11, color: t.textFaint, fontStyle: "italic", padding: "8px 0" }}>Nothing scheduled</div>
-              )}
-              {items.map((item, j) => {
-                const tk = tasks.find(tt => tt.id === item.taskId);
-                const rd = !tk && (readings || []).find(r => r.id === item.taskId);
-                if (!tk && !rd) return null;
-                const cat = tk ? CATEGORIES.find(c => c.id === tk.category) : null;
-                const color = cat ? cat.color : "#10B981";
-                const secName = tk && item.sectionId && tk.paperSections
-                  ? (tk.paperSections.find(s => s.id === item.sectionId) || {}).name
-                  : null;
-                const title = tk ? tk.title : rd.title;
-                return (
-                  <div key={j} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "5px 6px", marginBottom: 4, borderRadius: 6, background: color + "10", borderLeft: "3px solid " + color }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {secName ? (
-                        <>
-                          <div style={{ fontSize: 10, color: t.textQuad, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
-                          <div style={{ fontSize: 12, color: t.text, fontWeight: 600 }}>{secName}</div>
-                        </>
-                      ) : (
-                        <div style={{ fontSize: 12, color: t.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
-                      )}
-                    </div>
-                    <button onClick={() => onUnassign(ds, item.taskId, item.sectionId)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 11, padding: 0, flexShrink: 0, lineHeight: 1 }}>✕</button>
-                  </div>
-                );
-              })}
+              <button onClick={() => onUnassign(ds, item.taskId, item.sectionId)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 11, padding: 0, flexShrink: 0, lineHeight: 1 }}>✕</button>
             </div>
           );
         })}
       </div>
+    );
+  };
+
+  return (
+    <div style={{ background: t.bgCard, borderRadius: 12, padding: 18, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+      {/* Header with nav and view toggle */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={() => {
+            if (viewMode === "week") setWeekOffset(o => o - 1);
+            else changeMonth(-1);
+          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec }}>◂</button>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: t.text, margin: 0, minWidth: 140, textAlign: "center" }}>
+            {headerLabel}
+          </h3>
+          <button onClick={() => {
+            if (viewMode === "week") setWeekOffset(o => o + 1);
+            else changeMonth(1);
+          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec }}>▸</button>
+          {((viewMode === "week" && weekOffset !== 0) || (viewMode === "month" && !isCurrentMonth)) && (
+            <button onClick={() => {
+              if (viewMode === "week") setWeekOffset(0);
+              else setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1));
+            }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, fontSize: 14, color: "#E05A7A" }}>○</button>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 2, background: t.bgEmpty, borderRadius: 8, padding: 2 }}>
+          {["week", "month"].map(mode => (
+            <button key={mode} onClick={() => setViewMode(mode)} style={{
+              padding: "5px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+              background: viewMode === mode ? t.accent : "transparent",
+              color: viewMode === mode ? t.accentText : t.textTer,
+            }}>{mode === "week" ? "Week" : "Month"}</button>
+          ))}
+        </div>
+      </div>
+      {viewMode === "week" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+          {days.map(d => renderDayCard(d))}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {days.map(d => renderDayCard(d))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1832,22 +1944,24 @@ function AcademicTracker() {
           {urgentCount > 0 && <span style={{ color: "#D4883A", fontWeight: 600 }}>{" \u00B7 "}{urgentCount} due soon</span>}
         </p>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={() => { setShowPlanner(!showPlanner); setShowRoutine(false); setShowTrips(false); setShowReading(false); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + (showPlanner ? "#E05A7A" : t.borderBtn), background: showPlanner ? "#E05A7A18" : t.bgCard, color: showPlanner ? "#E05A7A" : t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>📋 Planner</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={() => { setEditTask(null); setShowForm(true); }} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: t.accent, color: t.accentText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Task</button>
         <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Trip</button>
         <button onClick={() => { setEditHabit(null); setShowHabitForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Routine</button>
         <button onClick={() => { setAddingReading(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Reading</button>
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        {(isMobile ? ["active", "closed"] : ["active", "closed", "all"]).map(s => <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid", borderColor: filterStatus === s ? t.accent : t.borderBtn, background: filterStatus === s ? t.accent : t.bgCard, color: filterStatus === s ? t.accentText : t.textTer, fontWeight: 600, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
-      </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
+      {/* Row 1: View switchers + Category filters */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        <button onClick={() => { setShowPlanner(!showPlanner); setShowRoutine(false); setShowTrips(false); setShowReading(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showPlanner ? "#E05A7A" : t.borderBtn, background: showPlanner ? "#E05A7A18" : t.bgCard, color: showPlanner ? "#E05A7A" : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📋 Planner</button>
         <button onClick={() => { setFilterCat("all"); setShowRoutine(false); setShowTrips(false); setShowPlanner(false); setShowReading(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === "all" && !showRoutine && !showTrips && !showPlanner && !showReading ? t.textSec : t.borderBtn, background: filterCat === "all" && !showRoutine && !showTrips && !showPlanner && !showReading ? t.textSec : t.bgCard, color: filterCat === "all" && !showRoutine && !showTrips && !showPlanner && !showReading ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>All</button>
         {CATEGORIES.map(c => <button key={c.id} onClick={() => { setFilterCat(c.id); setShowRoutine(false); setShowTrips(false); setShowPlanner(false); setShowReading(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === c.id && !showRoutine && !showTrips && !showPlanner && !showReading ? c.color : t.borderBtn, background: filterCat === c.id && !showRoutine && !showTrips && !showPlanner && !showReading ? c.color + "18" : t.bgCard, color: filterCat === c.id && !showRoutine && !showTrips && !showPlanner && !showReading ? c.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>{c.label}</button>)}
         <button onClick={() => { setShowRoutine(!showRoutine); setShowTrips(false); setShowPlanner(false); setShowReading(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showRoutine ? t.accent : t.borderBtn, background: showRoutine ? t.accent : t.bgCard, color: showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Daily Routine</button>
-        {isMobile && <button onClick={() => { setShowTrips(!showTrips); setShowRoutine(false); setShowPlanner(false); setShowReading(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showTrips ? t.accent : t.borderBtn, background: showTrips ? t.accent : t.bgCard, color: showTrips ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Trips</button>}
         <button onClick={() => { setShowReading(!showReading); setShowRoutine(false); setShowTrips(false); setShowPlanner(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showReading ? "#10B981" : t.borderBtn, background: showReading ? "#10B98118" : t.bgCard, color: showReading ? "#10B981" : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📚 Reading</button>
+        {isMobile && <button onClick={() => { setShowTrips(!showTrips); setShowRoutine(false); setShowPlanner(false); setShowReading(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showTrips ? t.accent : t.borderBtn, background: showTrips ? t.accent : t.bgCard, color: showTrips ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Trips</button>}
+      </div>
+      {/* Row 2: Status filters */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+        {(isMobile ? ["active", "closed"] : ["active", "closed", "all"]).map(s => <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterStatus === s ? t.accent : t.borderBtn, background: filterStatus === s ? t.accent : t.bgCard, color: filterStatus === s ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
       </div>
 
       {/* Mobile: week strip + habit + trips inline */}
@@ -1957,8 +2071,8 @@ function AcademicTracker() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {sorted.map(task => task.category === "paper"
-                ? <PaperCard key={task.id} task={task} onEdit={handleEdit} onDelete={deleteTask} onUpdatePaper={updatePaper} onStatusChange={changeStatus} scheduledToday={todayScheduledIds.has(task.id)} />
-                : <TaskCard key={task.id} task={task} onStatusChange={changeStatus} onDelete={deleteTask} onEdit={handleEdit} scheduledToday={todayScheduledIds.has(task.id)} />
+                ? <PaperCard key={task.id} task={task} onEdit={handleEdit} onDelete={deleteTask} onUpdatePaper={updatePaper} onStatusChange={changeStatus} scheduledToday={todayScheduledIds.has(task.id)} schedule={schedule} />
+                : <TaskCard key={task.id} task={task} onStatusChange={changeStatus} onDelete={deleteTask} onEdit={handleEdit} scheduledToday={todayScheduledIds.has(task.id)} schedule={schedule} />
               )}
             </div>
           )}
@@ -1973,6 +2087,8 @@ function AcademicTracker() {
     </ThemeCtx.Provider>
   );
 }
+
+
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(AcademicTracker));
