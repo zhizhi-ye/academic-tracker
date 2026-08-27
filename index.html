@@ -1349,13 +1349,11 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
           <button onClick={() => {
             if (viewMode === "week") setWeekOffset(o => o + 1);
             else changeMonth(1);
-          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec }}>▸</button>
+          }} style={{ background: "none", border: "1px solid " + t.borderBtn, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 14, color: t.textSec, position: "relative" }}>▸{((viewMode === "week" && weekOffset !== 0) || (viewMode === "month" && !isCurrentMonth)) && (
+              <span onClick={(e) => { e.stopPropagation(); if (viewMode === "week") setWeekOffset(0); else setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1)); }} style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7, borderRadius: "50%", background: "#E05A7A", cursor: "pointer" }} />
+          )}</button>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {((viewMode === "week" && weekOffset !== 0) || (viewMode === "month" && !isCurrentMonth)) && (
-            <button onClick={() => { if (viewMode === "week") setWeekOffset(0); else setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1)); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid " + t.borderBtn, background: t.bgCard, cursor: "pointer", fontSize: 11, fontWeight: 600, color: t.accent }}>Today</button>
-          )}
-          <div style={{ display: "flex", gap: 2, background: t.bgEmpty, borderRadius: 8, padding: 2 }}>
+        <div style={{ display: "flex", gap: 2, background: t.bgEmpty, borderRadius: 8, padding: 2 }}>
           {["week", "month"].map(mode => (
             <button key={mode} onClick={() => setViewMode(mode)} style={{
               padding: "5px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
@@ -1364,10 +1362,9 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
             }}>{mode === "week" ? "Week" : "Month"}</button>
           ))}
         </div>
-        </div>
       </div>
       {viewMode === "week" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {days.map(d => renderDayCard(d))}
         </div>
       ) : (
@@ -1395,7 +1392,7 @@ function AssignPanel({ date, tasks, readings, schedule, onAssign, onUnassign, on
   activeTasks.forEach(tk => {
     const catId = tk.category;
     if (!groups[catId]) return;
-    groups[catId].items.push({ taskId: tk.id, sectionId: null, label: tk.title, color: groups[catId].cat.color });
+    groups[catId].items.push({ taskId: tk.id, sectionId: null, label: tk.title, color: groups[catId].cat.color, deadline: tk.deadline, deadlineTime: tk.deadlineTime });
     if (tk.category === "paper" && tk.paperSections) {
       tk.paperSections.forEach(sec => {
         groups[catId].items.push({ taskId: tk.id, sectionId: sec.id, label: sec.name, color: groups[catId].cat.color, parentTitle: tk.title });
@@ -1467,8 +1464,19 @@ function AssignPanel({ date, tasks, readings, schedule, onAssign, onUnassign, on
                     <span style={{ width: 15, height: 15, borderRadius: 3, border: "1.5px solid " + (checked ? item.color : t.borderInput), background: checked ? item.color : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       {checked && <svg width="9" height="9" viewBox="0 0 10 10"><path d="M2 5.5L4 7.5L8 3" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </span>
-                    <span style={{ color: isSection ? t.textSec : t.text, fontWeight: isSection ? 400 : 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {item.label}
+                    <span style={{ color: isSection ? t.textSec : t.text, fontWeight: isSection ? 400 : 500, flex: 1, minWidth: 0 }}>
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</div>
+                      {!isSection && (() => {
+                        const dl = item.deadline;
+                        const schDates = getScheduledDates(schedule, item.taskId);
+                        if (!dl && schDates.length === 0) return null;
+                        return (
+                          <div style={{ fontSize: 10, color: t.textQuad, marginTop: 1, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {dl && <span style={{ color: (() => { const d = daysBetween(dl); if (d === null) return t.textQuad; if (d < 0) return "#B04040"; if (d <= 3) return "#D4883A"; if (d <= 7) return "#5B7FD1"; return t.textQuad; })() }}>Due: {formatDate(dl)}</span>}
+                            {schDates.length > 0 && <span>📅 {schDates.map(d => new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })).join(", ")}</span>}
+                          </div>
+                        );
+                      })()}
                     </span>
                     {isSection && <span style={{ fontSize: 9, color: t.textFaint }}>§</span>}
                   </button>
