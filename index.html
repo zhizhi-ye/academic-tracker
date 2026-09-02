@@ -110,8 +110,10 @@ const STATUS = {
   notification: { label: "Awaiting Result", bg: "#FFF0D1", fg: "#9A6D1F" },
   reviewed: { label: "Reviewed", bg: "#EDE9FE", fg: "#6D28D9" },
   nointerview: { label: "No Interview", bg: "#F0E0E0", fg: "#8B4040" },
+  notshortlisted: { label: "Not Shortlisted", bg: "#F0E0E0", fg: "#8B4040" },
   noreply: { label: "No Reply", bg: "#FFE0E0", fg: "#B04040" },
   notapplied: { label: "Not Applied", bg: "#f0f0f0", fg: "#999" },
+  notsubmit: { label: "Not Submit", bg: "#f0f0f0", fg: "#999" },
   success: { label: "Got It!", bg: "#D1F0D9", fg: "#2A7A3A" },
   // Paper-specific statuses
   writing: { label: "Writing in Progress", bg: "#FCE4EC", fg: "#C62828" },
@@ -120,6 +122,13 @@ const STATUS = {
   accepted: { label: "Accepted", bg: "#D1F0D9", fg: "#2A7A3A" },
   correction: { label: "Correction", bg: "#FFF0D1", fg: "#9A6D1F" },
   rejected: { label: "Rejected", bg: "#FFE0E0", fg: "#B04040" },
+};
+
+const STATUS_BY_CATEGORY = {
+  job: ["pending", "applied", "interview", "notshortlisted", "noreply", "notapplied", "success"],
+  cfp: ["pending", "submitted", "notification", "accepted", "rejected", "notsubmit"],
+  review: ["pending", "reviewed"],
+  paper: [],
 };
 
 const DRIVE_SHEET_ID = "1RhfpEMesNwZfImPumjL8cKiZ7EKAcddZgtqzk_ErHzE";
@@ -315,10 +324,12 @@ function TaskForm({ onAdd, onClose, editTask, onSaveEdit }) {
             <label style={labelStyleFn(t)}>Status</label>
             <select value={status} onChange={e => setStatus(e.target.value)} style={{ ...inputStyleFn(t), cursor: "pointer", appearance: "auto" }}>
               {Object.entries(STATUS).filter(([key]) => {
-                const paperOnly = ["writing", "finished", "submitted", "accepted", "correction", "rejected"];
-                const nonPaper = ["applied", "interview", "notification", "reviewed", "nointerview", "noreply", "notapplied", "success"];
-                if (isPaper) return !nonPaper.includes(key);
-                return !paperOnly.includes(key);
+                if (isPaper) {
+                  const paperStatuses = ["pending", "writing", "finished", "submitted", "accepted", "correction", "rejected"];
+                  return paperStatuses.includes(key);
+                }
+                const allowed = STATUS_BY_CATEGORY[category] || [];
+                return allowed.includes(key);
               }).map(([key, val]) => (
                 <option key={key} value={key}>{val.label}</option>
               ))}
@@ -375,10 +386,13 @@ function TaskCard({ task, onStatusChange, onDelete, onEdit, scheduledToday, sche
   const t = React.useContext(ThemeCtx);
   const cat = CATEGORIES.find(c => c.id === task.category) || CATEGORIES[0];
   const st = STATUS[task.status] || STATUS.pending;
-  const closed = task.status === "noreply" || task.status === "success" || task.status === "reviewed" || task.status === "notapplied" || task.status === "nointerview";
+  const CLOSED = new Set(["noreply", "success", "reviewed", "notapplied", "nointerview", "notshortlisted", "notsubmit", "accepted", "rejected"]);
+  const closed = CLOSED.has(task.status);
   const isJob = task.category === "job";
+  const isCfp = task.category === "cfp";
   const isReview = task.category === "review";
-  const submitted = !isReview && (task.status === "applied" || task.status === "interview" || task.status === "notification" || task.status === "success" || task.status === "nointerview");
+  const isPaper = task.category === "paper";
+  const submitted = !isReview && (task.status === "applied" || task.status === "submitted" || task.status === "interview" || task.status === "notification" || task.status === "success" || task.status === "nointerview" || task.status === "notshortlisted" || task.status === "accepted");
   const secondLabel = isJob ? "Interview" : "Notification";
   const secondVal = isReview ? null : (isJob ? task.interviewDate : task.notificationDate);
   return (
@@ -422,16 +436,23 @@ function TaskCard({ task, onStatusChange, onDelete, onEdit, scheduledToday, sche
         <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
           {isReview ? (
             <StatusBtn label="Reviewed" color="#8B5CF6" onClick={() => onStatusChange(task.id, "reviewed")} />
-          ) : (
+          ) : isJob ? (
             <>
               {task.status === "pending" && <StatusBtn label="Applied" color="#5B7FD1" onClick={() => onStatusChange(task.id, "applied")} />}
               {task.status === "applied" && <StatusBtn label="Applied ✓" color="#5B7FD1" onClick={() => onStatusChange(task.id, "pending")} />}
-              {isJob && (task.status === "pending" || task.status === "applied") && <StatusBtn label="Interview" color="#D4883A" onClick={() => onStatusChange(task.id, "interview")} />}
-              {!isJob && (task.status === "pending" || task.status === "applied") && <StatusBtn label="Awaiting Result" color="#D4883A" onClick={() => onStatusChange(task.id, "notification")} />}
-              {(task.status === "applied" || task.status === "interview") && <StatusBtn label="No Interview" color="#8B4040" onClick={() => onStatusChange(task.id, "nointerview")} />}
+              {(task.status === "pending" || task.status === "applied") && <StatusBtn label="Interview" color="#D4883A" onClick={() => onStatusChange(task.id, "interview")} />}
+              {(task.status === "applied" || task.status === "interview") && <StatusBtn label="Not Shortlisted" color="#8B4040" onClick={() => onStatusChange(task.id, "notshortlisted")} />}
               <StatusBtn label="Got It!" color="#2A7A3A" onClick={() => onStatusChange(task.id, "success")} />
             </>
-          )}
+          ) : isCfp ? (
+            <>
+              {task.status === "pending" && <StatusBtn label="Submitted" color="#5B7FD1" onClick={() => onStatusChange(task.id, "submitted")} />}
+              {task.status === "submitted" && <StatusBtn label="Submitted ✓" color="#5B7FD1" onClick={() => onStatusChange(task.id, "pending")} />}
+              {(task.status === "submitted") && <StatusBtn label="Awaiting Result" color="#D4883A" onClick={() => onStatusChange(task.id, "notification")} />}
+              {(task.status === "notification") && <StatusBtn label="Accepted" color="#2A7A3A" onClick={() => onStatusChange(task.id, "accepted")} />}
+              {(task.status === "notification") && <StatusBtn label="Rejected" color="#B04040" onClick={() => onStatusChange(task.id, "rejected")} />}
+            </>
+          ) : null}
         </div>
       )}
       {closed && (
@@ -754,7 +775,11 @@ function MiniCalendar({ tasks, trips, schedule, currentDate, onDateClick, onDate
         deadlineColors[t.deadline] = cat ? cat.color : "#999";
       }
     }
-    [t.deadline, t.interviewDate, t.notificationDate, t.conferenceDate].filter(Boolean).forEach(d => { if (!tasksByDate[d]) tasksByDate[d] = []; tasksByDate[d].push(t); });
+    [t.deadline, t.interviewDate, t.notificationDate, t.conferenceDate].filter(Boolean).forEach(d => {
+      const closedSet = new Set(["noreply", "notapplied", "nointerview", "notshortlisted", "notsubmit", "rejected"]);
+      if (closedSet.has(t.status) && d !== t.deadline) return;
+      if (!tasksByDate[d]) tasksByDate[d] = []; tasksByDate[d].push(t);
+    });
   });
   (trips || []).forEach(trip => {
     datesInRange(trip.startDate, trip.endDate).forEach(d => {
@@ -923,6 +948,8 @@ function WeekStrip({ tasks, trips, schedule, onDateClick, onDateLongPress, selec
   const tasksByDate = {};
   tasks.forEach(tk => {
     [tk.deadline, tk.interviewDate, tk.notificationDate, tk.conferenceDate].filter(Boolean).forEach(d => {
+      const closedSet = new Set(["noreply", "notapplied", "nointerview", "notshortlisted", "notsubmit", "rejected"]);
+      if (closedSet.has(tk.status) && d !== tk.deadline) return;
       if (!tasksByDate[d]) tasksByDate[d] = [];
       tasksByDate[d].push(tk);
     });
@@ -1337,7 +1364,7 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
   return (
     <div style={{ background: t.bgCard, borderRadius: 12, padding: 18, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
       {/* Header with nav and view toggle */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={() => {
             if (viewMode === "week") setWeekOffset(o => o - 1);
@@ -1380,7 +1407,7 @@ function PlannerView({ tasks, readings, schedule, onOpenAssign, onUnassign, calD
 function AssignPanel({ date, tasks, readings, schedule, onAssign, onUnassign, onClose }) {
   const t = React.useContext(ThemeCtx);
   const [filterCat, setFilterCat] = useState("all");
-  const closedStatuses = new Set(["noreply", "success", "reviewed", "notapplied", "nointerview", "accepted", "rejected"]);
+  const closedStatuses = new Set(["noreply", "success", "reviewed", "notapplied", "nointerview", "notshortlisted", "notsubmit", "accepted", "rejected"]);
   const activeTasks = tasks.filter(tk => !closedStatuses.has(tk.status));
   const assigned = schedule[date] || [];
   const isAssigned = (taskId, secId) => assigned.some(a => a.taskId === taskId && (a.sectionId || null) === (secId || null));
@@ -1854,13 +1881,14 @@ function AcademicTracker() {
   };
   const handleDateLongOrDouble = (dateStr) => { setAssignDate(dateStr); };
 
-  const closedStatuses = new Set(["noreply", "success", "reviewed", "notapplied", "nointerview", "accepted", "rejected"]);
+  const closedStatuses = new Set(["noreply", "success", "reviewed", "notapplied", "nointerview", "notshortlisted", "notsubmit", "accepted", "rejected"]);
   const filtered = tasks.filter(t => {
     if (filterCat !== "all" && t.category !== filterCat) return false;
     if (filterStatus === "active" && closedStatuses.has(t.status)) return false;
     if (filterStatus === "closed" && !closedStatuses.has(t.status)) return false;
     if (selectedDate) {
-      const dates = [t.deadline, t.interviewDate, t.notificationDate, t.conferenceDate];
+      const dismissedSet = new Set(["noreply", "notapplied", "nointerview", "notshortlisted", "notsubmit", "rejected"]);
+      const dates = dismissedSet.has(t.status) ? [t.deadline] : [t.deadline, t.interviewDate, t.notificationDate, t.conferenceDate];
       const scheduledIds = (schedule[selectedDate] || []).map(a => a.taskId);
       if (!dates.includes(selectedDate) && !scheduledIds.includes(t.id)) return false;
     }
@@ -1994,7 +2022,7 @@ function AcademicTracker() {
           )}
           {!showMobileCal && <WeekStrip tasks={tasks} trips={trips} schedule={schedule} onDateClick={handleDateClick} onDateLongPress={handleDateLongOrDouble} selectedDate={selectedDate} />}
           {selectedDate && <div style={{ fontSize: 12, color: "#5B7FD1", fontWeight: 600, textAlign: "center", marginBottom: 8 }}>Showing: {formatDate(selectedDate)} <button onClick={() => setSelectedDate(null)} style={{ marginLeft: 8, background: "none", border: "none", color: t.textTer, cursor: "pointer", fontSize: 12 }}>{"\u2715"} clear</button></div>}
-          <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />
+          {!showRoutine && <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />}
         </div>
       )}
 
@@ -2010,7 +2038,7 @@ function AcademicTracker() {
           </div>
           <MiniCalendar tasks={tasks} trips={trips} schedule={schedule} currentDate={calDate} selectedDate={selectedDate} onDateClick={handleDateClick} onDateLongPress={handleDateLongOrDouble} />
           {selectedDate && <div style={{ fontSize: 12, color: "#5B7FD1", fontWeight: 600, textAlign: "center" }}>Showing: {formatDate(selectedDate)} <button onClick={() => setSelectedDate(null)} style={{ marginLeft: 8, background: "none", border: "none", color: t.textTer, cursor: "pointer", fontSize: 12 }}>{"\u2715"} clear</button></div>}
-          <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />
+          {!showRoutine && <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />}
           <div style={{ marginTop: 14, borderTop: "1px solid " + t.borderLight, paddingTop: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: t.textTer, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Summary</div>
             {CATEGORIES.map(c => { const count = tasks.filter(tt => tt.category === c.id && tt.status !== "noreply" && tt.status !== "success" && tt.status !== "reviewed").length; return <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: t.textSec }}>{c.label}</span><span style={{ fontWeight: 700, color: c.color }}>{count}</span></div>; })}
@@ -2096,6 +2124,9 @@ function AcademicTracker() {
     </ThemeCtx.Provider>
   );
 }
+
+
+export default AcademicTracker;
 
 
 
