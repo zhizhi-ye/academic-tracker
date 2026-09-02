@@ -138,17 +138,6 @@ const STORAGE_KEY = "academic-tracker-tasks-v2";
 const TRIPS_KEY = "academic-tracker-trips-v1";
 const HABITS_KEY = "academic-tracker-habits-v1";
 const HABIT_LOG_KEY = "academic-tracker-habit-log-v1";
-const READING_KEY = "academic-tracker-reading-v1";
-const READING_TAGS_KEY = "academic-tracker-reading-tags-v1";
-const DEFAULT_READING_TAGS = [
-  { id: "theory", label: "Theory", color: "#8B5CF6" },
-  { id: "method", label: "Method", color: "#D4883A" },
-  { id: "casestudy", label: "Case Study", color: "#5B7FD1" },
-  { id: "review", label: "Review", color: "#10B981" },
-  { id: "background", label: "Background", color: "#6366F1" },
-  { id: "other", label: "Other", color: "#999" },
-];
-const TAG_COLORS = ["#8B5CF6", "#D4883A", "#5B7FD1", "#10B981", "#6366F1", "#E05A7A", "#999", "#C62828", "#0891B2", "#4F46E5"];
 const HABIT_COLORS = ["#5B7FD1", "#D4883A", "#8B5CF6", "#E05A7A", "#10B981", "#6366F1"];
 
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -919,266 +908,6 @@ function WeekStrip({ tasks, trips, onDateClick, selectedDate }) {
   );
 }
 
-function parseBibTeX(raw) {
-  const entries = [];
-  const re = /@(\w+)\s*\{([^,]*),([^@]*)\}/g;
-  let m;
-  while ((m = re.exec(raw)) !== null) {
-    const type = m[1].toLowerCase();
-    const key = m[2].trim();
-    const body = m[3];
-    const fields = {};
-    const fre = /(\w+)\s*=\s*[\{"]([^}"]*?)[\}"]/g;
-    let fm;
-    while ((fm = fre.exec(body)) !== null) {
-      fields[fm[1].toLowerCase()] = fm[2].replace(/[\{\}]/g, "").trim();
-    }
-    entries.push({
-      id: generateId(),
-      citeKey: key,
-      type,
-      title: fields.title || key,
-      author: fields.author || "",
-      year: fields.year || "",
-      journal: fields.journal || fields.booktitle || "",
-      read: false,
-      tags: [],
-      noteLink: "",
-      notes: "",
-      addedAt: localDateStr(new Date()),
-    });
-  }
-  return entries;
-}
-
-function ReadingList({ readings, onSave, tags, onSaveTags }) {
-  const t = React.useContext(ThemeCtx);
-  const [search, setSearch] = useState("");
-  const [filterTag, setFilterTag] = useState("all");
-  const [filterRead, setFilterRead] = useState("all");
-  const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({});
-  const [addingTag, setAddingTag] = useState(false);
-  const [newTagLabel, setNewTagLabel] = useState("");
-  const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0]);
-  const [filterType, setFilterType] = useState("all");
-
-  const doAddTag = () => {
-    if (!newTagLabel.trim()) return;
-    const id = newTagLabel.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (tags.some(tg => tg.id === id)) return;
-    onSaveTags([...tags, { id, label: newTagLabel.trim(), color: newTagColor }]);
-    setNewTagLabel(""); setAddingTag(false);
-  };
-  const deleteTag = (tagId) => {
-    onSaveTags(tags.filter(tg => tg.id !== tagId));
-    // Also remove from all readings
-    onSave(readings.map(r => ({ ...r, tags: (r.tags || []).filter(t => t !== tagId) })));
-  };
-
-  const toggleRead = (id) => onSave(readings.map(r => r.id === id ? { ...r, read: !r.read } : r));
-  const deleteReading = (id) => onSave(readings.filter(r => r.id !== id));
-  const startEdit = (r) => { setEditingId(r.id); setEditData({ title: r.title || "", author: r.author || "", year: r.year || "", journal: r.journal || "", type: r.type || "Journal Article", tags: [...(r.tags || [])], noteLink: r.noteLink || "", notes: r.notes || "" }); };
-  const saveEdit = () => { onSave(readings.map(r => r.id === editingId ? { ...r, ...editData } : r)); setEditingId(null); };
-  const toggleEditTag = (tagId) => {
-    const tags = editData.tags || [];
-    setEditData({ ...editData, tags: tags.includes(tagId) ? tags.filter(t => t !== tagId) : [...tags, tagId] });
-  };
-
-  const filtered = readings.filter(r => {
-    if (filterRead === "read" && !r.read) return false;
-    if (filterRead === "unread" && r.read) return false;
-    if (filterTag !== "all" && !(r.tags || []).includes(filterTag)) return false;
-    if (filterType !== "all" && (r.type || "") !== filterType) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!(r.title || "").toLowerCase().includes(q) && !(r.author || "").toLowerCase().includes(q) && !(r.tags || []).some(tg => tg.includes(q)) && !(r.type || "").toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
-
-  const readCount = readings.filter(r => r.read).length;
-
-  return (
-    <div style={{ background: t.bgCard, borderRadius: 12, padding: 18, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 10 }}>
-        <div>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: t.text, margin: 0 }}>📚 Reading List</h3>
-          <span style={{ fontSize: 11, color: t.textTer }}>{readCount}/{readings.length} read</span>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={() => setFilterTag("all")} style={{ padding: "3px 8px", borderRadius: 12, border: "1px solid " + (filterTag === "all" ? t.textTer : t.borderBtn), background: filterTag === "all" ? t.textTer : "transparent", color: filterTag === "all" ? t.accentText : t.textQuad, fontWeight: 600, fontSize: 10, cursor: "pointer" }}>All</button>
-        {tags.map(tg => (
-          <button key={tg.id} onClick={() => setFilterTag(filterTag === tg.id ? "all" : tg.id)} style={{ padding: "3px 8px", borderRadius: 12, border: "1px solid " + (filterTag === tg.id ? tg.color : tg.color + "40"), background: filterTag === tg.id ? tg.color : "transparent", color: filterTag === tg.id ? "#fff" : tg.color, fontWeight: 600, fontSize: 10, cursor: "pointer" }}>{tg.label}</button>
-        ))}
-        <button onClick={() => setAddingTag(!addingTag)} style={{ padding: "3px 6px", borderRadius: 12, border: "1px dashed " + t.borderBtn, background: "transparent", color: t.textQuad, fontWeight: 600, fontSize: 10, cursor: "pointer" }}>+</button>
-        <span style={{ width: 1, height: 14, background: t.borderLight, margin: "0 2px" }} />
-        {["all", "read", "unread"].map(s => (
-          <button key={s} onClick={() => setFilterRead(s)} style={{ padding: "3px 8px", borderRadius: 12, border: "1px solid " + (filterRead === s ? t.textTer : t.borderBtn), background: filterRead === s ? t.textTer : "transparent", color: filterRead === s ? t.accentText : t.textQuad, fontWeight: 600, fontSize: 10, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>
-        ))}
-      </div>
-      {addingTag && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <input value={newTagLabel} onChange={e => setNewTagLabel(e.target.value)} placeholder="Tag name" onKeyDown={e => e.key === "Enter" && doAddTag()} style={{ width: 100, padding: "4px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 11, background: t.bgInput, color: t.text, outline: "none", fontFamily: "inherit" }} />
-          <div style={{ display: "flex", gap: 3 }}>
-            {TAG_COLORS.map(c => (
-              <button key={c} onClick={() => setNewTagColor(c)} style={{ width: 16, height: 16, borderRadius: 8, background: c, border: newTagColor === c ? "2px solid " + t.text : "2px solid transparent", cursor: "pointer", padding: 0 }} />
-            ))}
-          </div>
-          <button onClick={doAddTag} disabled={!newTagLabel.trim()} style={{ padding: "3px 10px", borderRadius: 5, border: "none", background: newTagLabel.trim() ? t.accent : t.borderBtn, color: newTagLabel.trim() ? t.accentText : t.textFaint, fontWeight: 600, fontSize: 10, cursor: newTagLabel.trim() ? "pointer" : "default" }}>Add</button>
-          <button onClick={() => setAddingTag(false)} style={{ padding: "3px 8px", borderRadius: 5, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textTer, fontWeight: 600, fontSize: 10, cursor: "pointer" }}>Cancel</button>
-        </div>
-      )}
-
-      {/* Type filter */}
-      {(() => {
-        const types = [...new Set(readings.map(r => r.type || "").filter(Boolean))].sort();
-        if (types.length <= 1) return null;
-        return (
-          <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: t.textQuad, textTransform: "uppercase", marginRight: 2 }}>Type</span>
-            <button onClick={() => setFilterType("all")} style={{ padding: "3px 8px", borderRadius: 12, border: "1px solid " + (filterType === "all" ? t.textTer : t.borderBtn), background: filterType === "all" ? t.textTer : "transparent", color: filterType === "all" ? t.accentText : t.textQuad, fontWeight: 600, fontSize: 10, cursor: "pointer" }}>All</button>
-            {types.map(tp => (
-              <button key={tp} onClick={() => setFilterType(filterType === tp ? "all" : tp)} style={{ padding: "3px 8px", borderRadius: 12, border: "1px solid " + (filterType === tp ? t.textSec : t.borderBtn), background: filterType === tp ? t.textSec : "transparent", color: filterType === tp ? t.accentText : t.textQuad, fontWeight: 600, fontSize: 10, cursor: "pointer" }}>{tp}</button>
-            ))}
-          </div>
-        );
-      })()}
-
-      {/* Search */}
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, author, tag, type..." style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid " + t.borderLight, fontSize: 12, background: t.bgEmpty, color: t.text, outline: "none", boxSizing: "border-box", marginBottom: 10, fontFamily: "inherit" }} />
-
-      {/* List */}
-      {filtered.length === 0 && (
-        <div style={{ textAlign: "center", padding: "24px 20px", color: t.textFaint, fontSize: 12 }}>
-          {readings.length === 0 ? 'No readings yet — import BibTeX to start.' : 'No matches.'}
-        </div>
-      )}
-      {filtered.map(r => {
-        const isEditing = editingId === r.id;
-        return (
-          <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid " + t.borderLight }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-              {/* Read toggle */}
-              <button onClick={() => toggleRead(r.id)} style={{ marginTop: 2, width: 18, height: 18, borderRadius: 10, border: "1.5px solid " + (r.read ? "#2A7A3A" : t.borderInput), background: r.read ? "#2A7A3A" : "transparent", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {r.read && <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5.5L4 7.5L8 3" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-              </button>
-              {/* Content */}
-              <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => isEditing ? null : startEdit(r)}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: r.read ? t.textTer : t.text, lineHeight: 1.3, textDecoration: r.read ? "line-through" : "none" }}>{r.title}</div>
-                <div style={{ fontSize: 10, color: t.textQuad, marginTop: 1 }}>
-                  {r.type && <span style={{ fontSize: 9, padding: "0 5px", borderRadius: 3, background: t.borderLight, color: t.textTer, fontWeight: 600, marginRight: 4 }}>{r.type}</span>}
-                  {r.author && <span>{r.author}</span>}
-                  {r.year && <span> · {r.year}</span>}
-                  {r.journal && <span> · {r.journal}</span>}
-                </div>
-                {(r.tags || []).length > 0 && (
-                  <div style={{ display: "flex", gap: 3, marginTop: 3, flexWrap: "wrap" }}>
-                    {r.tags.map(tgId => {
-                      const tg = tags.find(t => t.id === tgId);
-                      return tg ? <span key={tgId} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, background: tg.color + "18", color: tg.color, fontWeight: 600 }}>{tg.label}</span> : null;
-                    })}
-                  </div>
-                )}
-                {r.noteLink && <a href={r.noteLink} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 10, color: t.accent, marginTop: 2, display: "inline-block" }}>📄 Note ↗</a>}
-              </div>
-              {/* Delete */}
-              <button onClick={() => deleteReading(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textFaint, fontSize: 11, padding: 2, flexShrink: 0, opacity: 0.5 }}>✕</button>
-            </div>
-
-            {/* Inline edit */}
-            {isEditing && (
-              <div style={{ marginTop: 8, marginLeft: 26, padding: 10, borderRadius: 8, background: t.bgEmpty, border: "1px solid " + t.borderLight }}>
-                <input value={editData.title} onChange={e => setEditData({ ...editData, title: e.target.value })} placeholder="Title" style={{ width: "100%", padding: "5px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 12, fontWeight: 600, background: t.bgInput, color: t.text, outline: "none", boxSizing: "border-box", marginBottom: 6, fontFamily: "inherit" }} />
-                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                  <input value={editData.author} onChange={e => setEditData({ ...editData, author: e.target.value })} placeholder="Author" style={{ flex: 2, padding: "5px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 11, background: t.bgInput, color: t.text, outline: "none", fontFamily: "inherit" }} />
-                  <input value={editData.year} onChange={e => setEditData({ ...editData, year: e.target.value })} placeholder="Year" style={{ flex: 1, padding: "5px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 11, background: t.bgInput, color: t.text, outline: "none", fontFamily: "inherit" }} />
-                </div>
-                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                  <input value={editData.journal} onChange={e => setEditData({ ...editData, journal: e.target.value })} placeholder="Journal / Venue" style={{ flex: 2, padding: "5px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 11, background: t.bgInput, color: t.text, outline: "none", fontFamily: "inherit" }} />
-                  <input value={editData.type} onChange={e => setEditData({ ...editData, type: e.target.value })} placeholder="Journal Article" style={{ flex: 1, padding: "5px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 11, background: t.bgInput, color: t.text, outline: "none", fontFamily: "inherit" }} />
-                </div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: t.textTer, textTransform: "uppercase", marginBottom: 4 }}>Tags</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-                  {tags.map(tg => {
-                    const sel = (editData.tags || []).includes(tg.id);
-                    return <button key={tg.id} onClick={() => toggleEditTag(tg.id)} style={{ padding: "3px 8px", borderRadius: 10, border: "1px solid " + (sel ? tg.color : tg.color + "40"), background: sel ? tg.color : "transparent", color: sel ? "#fff" : tg.color, fontWeight: 600, fontSize: 10, cursor: "pointer" }}>{tg.label}</button>;
-                  })}
-                </div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: t.textTer, textTransform: "uppercase", marginBottom: 4 }}>Note Link</div>
-                <input value={editData.noteLink} onChange={e => setEditData({ ...editData, noteLink: e.target.value })} placeholder="Google Doc URL..." style={{ width: "100%", padding: "5px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 11, background: t.bgInput, color: t.text, outline: "none", boxSizing: "border-box", marginBottom: 8, fontFamily: "inherit" }} />
-                <div style={{ fontSize: 10, fontWeight: 700, color: t.textTer, textTransform: "uppercase", marginBottom: 4 }}>Notes</div>
-                <textarea value={editData.notes} onChange={e => setEditData({ ...editData, notes: e.target.value })} placeholder="Quick notes..." rows={2} style={{ width: "100%", padding: "5px 8px", borderRadius: 5, border: "1px solid " + t.borderLight, fontSize: 11, background: t.bgInput, color: t.text, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }} />
-                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                  <button onClick={saveEdit} style={{ padding: "4px 14px", borderRadius: 6, border: "none", background: t.accent, color: t.accentText, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Save</button>
-                  <button onClick={() => setEditingId(null)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ReadingForm({ onAdd, onClose }) {
-  const t = React.useContext(ThemeCtx);
-  const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
-  const [year, setYear] = useState("");
-  const [journal, setJournal] = useState("");
-  const [type, setType] = useState("Journal Article");
-  const [bibInput, setBibInput] = useState("");
-  const [mode, setMode] = useState("manual");
-  const ok = mode === "manual" ? title.trim() : bibInput.trim();
-  const handleSubmit = () => {
-    if (mode === "manual") {
-      if (!title.trim()) return;
-      onAdd([{ id: generateId(), citeKey: "", type, title: title.trim(), author: author.trim(), year: year.trim(), journal: journal.trim(), read: false, tags: [], noteLink: "", notes: "", addedAt: localDateStr(new Date()) }]);
-    } else {
-      const parsed = parseBibTeX(bibInput);
-      if (parsed.length === 0) return;
-      onAdd(parsed);
-    }
-    onClose();
-  };
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.bgModal, borderRadius: 14, padding: "22px 24px", width: "min(420px,92vw)", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", maxHeight: "85vh", overflowY: "auto" }}>
-        <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: t.text }}>📚 Add Reading</h3>
-        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          <button onClick={() => setMode("manual")} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + (mode === "manual" ? t.accent : t.borderBtn), background: mode === "manual" ? t.accent : t.bgCard, color: mode === "manual" ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Manual</button>
-          <button onClick={() => setMode("bibtex")} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + (mode === "bibtex" ? t.accent : t.borderBtn), background: mode === "bibtex" ? t.accent : t.bgCard, color: mode === "bibtex" ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Import BibTeX</button>
-        </div>
-        {mode === "manual" ? (<>
-          <label style={labelStyleFn(t)}>Title *</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Paper title" style={inputStyleFn(t)} />
-          <div style={{ display: "flex", gap: 14 }}>
-            <div style={{ flex: 2 }}><label style={labelStyleFn(t)}>Author</label><input value={author} onChange={e => setAuthor(e.target.value)} placeholder="Author(s)" style={inputStyleFn(t)} /></div>
-            <div style={{ flex: 1 }}><label style={labelStyleFn(t)}>Year</label><input value={year} onChange={e => setYear(e.target.value)} placeholder="2024" style={inputStyleFn(t)} /></div>
-          </div>
-          <div style={{ display: "flex", gap: 14 }}>
-            <div style={{ flex: 2 }}><label style={labelStyleFn(t)}>Journal / Venue</label><input value={journal} onChange={e => setJournal(e.target.value)} placeholder="Journal name" style={inputStyleFn(t)} /></div>
-            <div style={{ flex: 1 }}><label style={labelStyleFn(t)}>Type</label><input value={type} onChange={e => setType(e.target.value)} placeholder="Journal Article" style={inputStyleFn(t)} /></div>
-          </div>
-        </>) : (<>
-          <label style={labelStyleFn(t)}>Paste BibTeX</label>
-          <textarea value={bibInput} onChange={e => setBibInput(e.target.value)} placeholder={"@article{key,\n  title={...},\n  author={...},\n  year={2024}\n}"} rows={6} style={{ ...inputStyleFn(t), fontFamily: "monospace", fontSize: 11, resize: "vertical", lineHeight: 1.5 }} />
-          <div style={{ fontSize: 10, color: t.textQuad, marginBottom: 8 }}>Supports multiple entries at once</div>
-        </>)}
-        <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-          <button onClick={handleSubmit} disabled={!ok} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: ok ? t.accent : t.borderBtn, color: ok ? t.accentText : t.textFaint, fontWeight: 700, cursor: ok ? "pointer" : "default", fontSize: 14 }}>{mode === "manual" ? "Add" : "Import"}</button>
-          <button onClick={onClose} style={{ padding: "12px 18px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textTer, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function AcademicTracker() {
   const t = useTheme();
   const isMobile = useIsMobile();
@@ -1198,10 +927,6 @@ function AcademicTracker() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showRoutine, setShowRoutine] = useState(false);
   const [showTrips, setShowTrips] = useState(false);
-  const [showReading, setShowReading] = useState(false);
-  const [readings, setReadings] = useState([]);
-  const [readingTags, setReadingTags] = useState(DEFAULT_READING_TAGS);
-  const [addingReading, setAddingReading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [recentlyDeleted, setRecentlyDeleted] = useState([]);
   const undoTimeoutRef = useRef(null);
@@ -1215,10 +940,10 @@ function AcademicTracker() {
     setSyncing(true); setSyncMsg("");
     try {
       if (window.electronAPI?.syncToSheet) {
-        const result = await window.electronAPI.syncToSheet(JSON.stringify({ tasks, trips, habits, habitLog,  readings }));
+        const result = await window.electronAPI.syncToSheet(JSON.stringify({ tasks, trips, habits, habitLog }));
         setSyncMsg(result && result.success ? "Pushed ✓" : "Push failed");
       } else {
-        await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ tasks, trips, habits, habitLog,  readings }), headers: { "Content-Type": "text/plain" }, mode: "no-cors" });
+        await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ tasks, trips, habits, habitLog }), headers: { "Content-Type": "text/plain" }, mode: "no-cors" });
         setSyncMsg("Pushed ✓");
       }
     } catch (e) { setSyncMsg("Push error"); }
@@ -1289,19 +1014,16 @@ function AcademicTracker() {
         const resp = await fetch(url);
         return await resp.text();
       };
-      const [tasksResp, tripsResp, habitsResp, logResp, schedResp, readResp] = await Promise.all([
+      const [tasksResp, tripsResp, habitsResp, logResp] = await Promise.all([
         fetchText(gvizUrl("Tasks")),
         fetchText(gvizUrl("Trips")).catch(() => ""),
         fetchText(gvizUrl("Habits")).catch(() => ""),
         fetchText(gvizUrl("Habit Log")).catch(() => ""),
-        fetchText(gvizUrl("Readings")).catch(() => ""),
       ]);
       const rawTasks = parseGviz(tasksResp) || [];
       const trips = parseGviz(tripsResp) || [];
       const habits = parseGviz(habitsResp) || [];
       const logRows = parseGviz(logResp) || [];
-      const schedRows = parseGviz(schedResp) || [];
-      const rawReadings = parseGviz(readResp) || [];
 
       // Parse JSON fields in tasks
       const tasks = rawTasks.map(t => {
@@ -1313,19 +1035,6 @@ function AcademicTracker() {
       const habitLog = {};
       logRows.forEach(r => { if (r.key && !r.key.startsWith("undefined")) habitLog[r.key] = true; });
 
-      schedRows.forEach(r => {
-        if (r.date && r.items) {
-        }
-      });
-
-      // Parse readings
-      const pulledReadings = rawReadings.map(r => {
-        if (r.tags && typeof r.tags === "string") r.tags = r.tags.split(", ").filter(Boolean);
-        else if (!Array.isArray(r.tags)) r.tags = [];
-        r.read = r.read === "✓" || r.read === "true" || r.read === true;
-        return r;
-      });
-
       // Validate: tasks must have id and title
       const validTasks = tasks.filter(t => t.id && t.title);
       const validHabits = habits.filter(h => h.id && h.name);
@@ -1335,7 +1044,6 @@ function AcademicTracker() {
         if (trips.length > 0) await saveTrips(trips.filter(t => t.id && t.title));
         if (validHabits.length > 0) await saveHabits(validHabits);
         if (Object.keys(habitLog).length > 0) await saveHabitLog(habitLog);
-        if (pulledReadings.length > 0) await saveReadings(pulledReadings);
         setSyncMsg("Pulled " + validTasks.length + " tasks ✓");
       } else { setSyncMsg("Pull: no valid data"); }
     } catch (e) { setSyncMsg("Pull: " + e.message); }
@@ -1432,18 +1140,10 @@ function AcademicTracker() {
       try {
       } catch (e) {}
 
-      // Load readings
-      let existingReadings = [];
       try {
-        const rd = await window.storage.get(READING_KEY);
-        if (rd && rd.value) existingReadings = JSON.parse(rd.value);
       } catch (e) {}
-      setReadings(existingReadings);
 
-      // Load reading tags
       try {
-        const rt = await window.storage.get(READING_TAGS_KEY);
-        if (rt && rt.value) setReadingTags(JSON.parse(rt.value));
       } catch (e) {}
 
       setLoaded(true);
@@ -1501,9 +1201,6 @@ function AcademicTracker() {
   const deleteHabit = (id) => { saveHabits(habits.filter(h => h.id !== id)); const newLog = { ...habitLog }; Object.keys(newLog).forEach(k => { if (k.startsWith(id + ":")) delete newLog[k]; }); saveHabitLog(newLog); };
   const toggleHabit = (habitId, dateStr) => { const key = habitId + ":" + dateStr; const newLog = { ...habitLog }; if (newLog[key]) delete newLog[key]; else newLog[key] = true; saveHabitLog(newLog); };
 
-  // Reading handlers
-  const saveReadings = useCallback(async (nr) => { setReadings(nr); try { await window.storage.set(READING_KEY, JSON.stringify(nr)); } catch (e) {} }, []);
-  const saveReadingTags = useCallback(async (nt) => { setReadingTags(nt); try { await window.storage.set(READING_TAGS_KEY, JSON.stringify(nt)); } catch (e) {} }, []);
 
   const handleDateClick = (dateStr) => {
     if (selectedDate === dateStr) { setSelectedDate(null); }
@@ -1608,10 +1305,13 @@ function AcademicTracker() {
         <button onClick={() => { setEditTask(null); setShowForm(true); }} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: t.accent, color: t.accentText, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Task</button>
         <button onClick={() => { setEditTrip(null); setShowTripForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Trip</button>
         <button onClick={() => { setEditHabit(null); setShowHabitForm(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Routine</button>
-        <button onClick={() => { setAddingReading(true); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid " + t.borderBtn, background: t.bgCard, color: t.textSec, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>+ Reading</button>
       </div>
       {/* Row 1: View switchers + Category filters */}
       <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        <button onClick={() => { setFilterCat("all"); setShowRoutine(false); setShowTrips(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === "all" && !showRoutine && !showTrips ? t.textSec : t.borderBtn, background: filterCat === "all" && !showRoutine && !showTrips ? t.textSec : t.bgCard, color: filterCat === "all" && !showRoutine && !showTrips ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>All</button>
+        {CATEGORIES.map(c => <button key={c.id} onClick={() => { setFilterCat(c.id); setShowRoutine(false); setShowTrips(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: filterCat === c.id && !showRoutine && !showTrips ? c.color : t.borderBtn, background: filterCat === c.id && !showRoutine && !showTrips ? c.color + "18" : t.bgCard, color: filterCat === c.id && !showRoutine && !showTrips ? c.color : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>{c.label}</button>)}
+        <button onClick={() => { setShowRoutine(!showRoutine); setShowTrips(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showRoutine ? t.accent : t.borderBtn, background: showRoutine ? t.accent : t.bgCard, color: showRoutine ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Daily Routine</button>
+        {isMobile && <button onClick={() => { setShowTrips(!showTrips); setShowRoutine(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid", borderColor: showTrips ? t.accent : t.borderBtn, background: showTrips ? t.accent : t.bgCard, color: showTrips ? t.accentText : t.textTer, fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Trips</button>}
       </div>
       {/* Row 2: Status filters */}
       <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
@@ -1634,8 +1334,10 @@ function AcademicTracker() {
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{calDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
                 <button onClick={() => changeMonth(1)} style={navBtnStyleFn(t)}>{"\u25B8"}</button>
               </div>
+              <MiniCalendar tasks={tasks} trips={trips} currentDate={calDate} onDateClick={handleDateClick} selectedDate={selectedDate} />
             </div>
           )}
+          {!showMobileCal && <WeekStrip tasks={tasks} trips={trips} onDateClick={handleDateClick} selectedDate={selectedDate} />}
           {selectedDate && <div style={{ fontSize: 12, color: "#5B7FD1", fontWeight: 600, textAlign: "center", marginBottom: 8 }}>Showing: {formatDate(selectedDate)} <button onClick={() => setSelectedDate(null)} style={{ marginLeft: 8, background: "none", border: "none", color: t.textTer, cursor: "pointer", fontSize: 12 }}>{"\u2715"} clear</button></div>}
           {!showRoutine && <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />}
         </div>
@@ -1651,6 +1353,7 @@ function AcademicTracker() {
             <span style={{ fontSize: 14, fontWeight: 700 }}>{calDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
             <button onClick={() => changeMonth(1)} style={navBtnStyleFn(t)}>{"\u25B8"}</button>
           </div>
+          <MiniCalendar tasks={tasks} trips={trips} currentDate={calDate} onDateClick={handleDateClick} selectedDate={selectedDate} />
           {selectedDate && <div style={{ fontSize: 12, color: "#5B7FD1", fontWeight: 600, textAlign: "center" }}>Showing: {formatDate(selectedDate)} <button onClick={() => setSelectedDate(null)} style={{ marginLeft: 8, background: "none", border: "none", color: t.textTer, cursor: "pointer", fontSize: 12 }}>{"\u2715"} clear</button></div>}
           {!showRoutine && <HabitTracker habits={habits} log={habitLog} onToggle={toggleHabit} />}
           <div style={{ marginTop: 14, borderTop: "1px solid " + t.borderLight, paddingTop: 14 }}>
@@ -1688,9 +1391,7 @@ function AcademicTracker() {
               </div>
             </div>
           ))}
-          {showReading ? (
-            <ReadingList readings={readings} onSave={saveReadings} tags={readingTags} onSaveTags={saveReadingTags} />
-          ) : showTrips ? (
+          {showTrips ? (
             <div style={{ background: t.bgCard, borderRadius: 12, padding: 18, border: "1px solid " + t.border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
               <h3 style={{ fontSize: 15, fontWeight: 700, color: t.text, margin: "0 0 14px" }}>All Trips</h3>
               {trips.length === 0 ? (
@@ -1720,6 +1421,8 @@ function AcademicTracker() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {sorted.map(task => task.category === "paper"
+                ? <PaperCard key={task.id} task={task} onEdit={handleEdit} onDelete={deleteTask} onUpdatePaper={updatePaper} onStatusChange={changeStatus} />
+                : <TaskCard key={task.id} task={task} onStatusChange={changeStatus} onDelete={deleteTask} onEdit={handleEdit} />
               )}
             </div>
           )}
@@ -1728,7 +1431,6 @@ function AcademicTracker() {
       {showForm && <TaskForm onAdd={addTask} onClose={() => { setShowForm(false); setEditTask(null); }} editTask={editTask} onSaveEdit={saveEdit} />}
       {showTripForm && <TripForm onAdd={addTrip} onClose={() => { setShowTripForm(false); setEditTrip(null); }} editTrip={editTrip} onSaveEdit={saveEditTrip} />}
       {showHabitForm && <HabitForm onAdd={addHabit} onClose={() => { setShowHabitForm(false); setEditHabit(null); }} editHabit={editHabit} onSaveEdit={saveEditHabit} />}
-      {addingReading && <ReadingForm onAdd={(entries) => { const existing = new Set(readings.map(r => r.citeKey).filter(Boolean)); const fresh = entries.filter(e => !e.citeKey || !existing.has(e.citeKey)); if (fresh.length > 0) saveReadings([...readings, ...fresh]); }} onClose={() => setAddingReading(false)} />}
     </div>
     </ThemeCtx.Provider>
   );
