@@ -1021,16 +1021,48 @@ function AcademicTracker() {
         fetchText(gvizUrl("Habit Log")).catch(() => ""),
       ]);
       const rawTasks = parseGviz(tasksResp) || [];
-      const trips = parseGviz(tripsResp) || [];
+      const rawTrips = parseGviz(tripsResp) || [];
       const habits = parseGviz(habitsResp) || [];
       const logRows = parseGviz(logResp) || [];
 
-      // Parse JSON fields in tasks
+      // Clean dates: convert ISO datetime or Google Sheets date artifacts back to YYYY-MM-DD or HH:MM
+      const dateFields = ["deadline", "interviewDate", "notificationDate", "conferenceDate", "createdAt", "startDate", "endDate"];
+      const timeFields = ["deadlineTime"];
+      const cleanDate = (v) => {
+        if (!v || v === "") return "";
+        // Already YYYY-MM-DD
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+        // ISO datetime: 2026-10-01T07:00:00.000Z → 2026-10-01
+        const isoMatch = v.match(/^(\d{4}-\d{2}-\d{2})T/);
+        if (isoMatch) return isoMatch[1];
+        // Google Sheets Date(year,month,day) format
+        const gdMatch = v.match(/Date\((\d+),(\d+),(\d+)/);
+        if (gdMatch) return gdMatch[1] + "-" + String(Number(gdMatch[2]) + 1).padStart(2, "0") + "-" + gdMatch[3].padStart(2, "0");
+        return v;
+      };
+      const cleanTime = (v) => {
+        if (!v || v === "") return "";
+        // Already HH:MM or text like "12:00 midday"
+        if (/^\d{1,2}:\d{2}/.test(v)) return v;
+        // ISO datetime for time: 1899-12-31T01:00:00.000Z → extract time
+        const isoMatch = v.match(/T(\d{2}):(\d{2})/);
+        if (isoMatch) return isoMatch[1] + ":" + isoMatch[2];
+        return v;
+      };
+      const cleanRow = (row) => {
+        dateFields.forEach(f => { if (row[f]) row[f] = cleanDate(row[f]); });
+        timeFields.forEach(f => { if (row[f]) row[f] = cleanTime(row[f]); });
+        return row;
+      };
+
+      // Parse JSON fields in tasks and clean dates
       const tasks = rawTasks.map(t => {
+        cleanRow(t);
         try { if (t.paperPhases && typeof t.paperPhases === "string") t.paperPhases = JSON.parse(t.paperPhases); } catch(e) { t.paperPhases = null; }
         try { if (t.paperSections && typeof t.paperSections === "string") t.paperSections = JSON.parse(t.paperSections); } catch(e) { t.paperSections = null; }
         return t;
       });
+      const trips = rawTrips.map(t => cleanRow(t));
 
       const habitLog = {};
       logRows.forEach(r => { if (r.key && !r.key.startsWith("undefined")) habitLog[r.key] = true; });
